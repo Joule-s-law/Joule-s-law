@@ -44,6 +44,10 @@ export abstract class BaseComponent {
 
   abstract getResistance(): number
 
+  getAngularAcceleration(): number {
+    return 0
+  }
+
   abstract buildCircuitModel(model: MnaModel): void
 
   abstract onTick(ctx: TickContext): void

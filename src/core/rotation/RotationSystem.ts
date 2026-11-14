@@ -1,12 +1,12 @@
 import type { BaseComponent } from '../components/BaseComponent'
 import { paramTag } from '../components/ComponentDefinition'
 
-const TWO_PI = Math.PI * 2
-const CRANK_RAMP_SECONDS = 2
+const FRICTION_ALPHA = Math.PI
 
-interface DriveState {
-  dir: number
-  speed: number
+interface BlockMember {
+  component: BaseComponent
+  ratio: number
+  sign: number
 }
 
 export class RotationSystem {
@@ -18,34 +18,90 @@ export class RotationSystem {
     this.adjacency.clear()
     const rotatables = components.filter((component) => paramTag(component.def, 'rotatable', '') === '1')
     this.buildAdjacency(rotatables)
-    for (const component of rotatables) {
-      if (paramTag(component.def, 'holdable', '') === '1') {
-        this.driveCrank(component, dt)
-      }
-    }
     const visited = new Set<BaseComponent>()
-    const conflictBlocks: BaseComponent[][] = []
-    for (const component of rotatables) {
-      if (paramTag(component.def, 'holdable', '') !== '1') continue
-      if (visited.has(component)) continue
-      const conflict = this.propagate(component, visited)
-      if (conflict !== null) conflictBlocks.push(conflict)
-    }
     for (const component of rotatables) {
       if (visited.has(component)) continue
-      component.rotationSpeed = paramTag(component.def, 'holdable', '') === '1' ? component.rotationSpeed : 0
+      const block = this.collectBlock(component, visited)
+      if (block.inconsistent) {
+        for (const member of block.members) {
+          this.lockedComponents.add(member.component)
+          member.component.rotationSpeed = 0
+        }
+        continue
+      }
+      this.integrateBlock(block.members, dt)
     }
     for (const component of rotatables) {
       component.rotationAngle += component.rotationSpeed * dt
       component.rotationAngleAt = performance.now()
     }
-    for (const block of conflictBlocks) {
-      for (const component of block) {
-        this.lockedComponents.add(component)
-        if (paramTag(component.def, 'holdable', '') !== '1') {
-          component.rotationSpeed = 0
+  }
+
+  private collectBlock(
+    source: BaseComponent,
+    visited: Set<BaseComponent>,
+  ): { members: BlockMember[]; inconsistent: boolean } {
+    const root: BlockMember = { component: source, ratio: 1, sign: 1 }
+    const members: BlockMember[] = [root]
+    const byComponent = new Map<BaseComponent, BlockMember>([[source, root]])
+    visited.add(source)
+    const queue: BlockMember[] = [root]
+    let inconsistent = false
+    while (queue.length > 0) {
+      const member = queue.shift()
+      if (member === undefined) break
+      const neighbors = this.adjacency.get(member.component) ?? []
+      for (const neighbor of neighbors) {
+        const ratio = member.ratio * (member.component.teeth / neighbor.teeth)
+        const sign = -member.sign
+        const existing = byComponent.get(neighbor)
+        if (existing !== undefined) {
+          if (existing.sign !== sign || Math.abs(existing.ratio - ratio) > 1e-9) {
+            inconsistent = true
+          }
+          continue
         }
+        visited.add(neighbor)
+        const next: BlockMember = { component: neighbor, ratio, sign }
+        byComponent.set(neighbor, next)
+        members.push(next)
+        queue.push(next)
       }
+    }
+    return { members, inconsistent }
+  }
+
+  private integrateBlock(block: BlockMember[], dt: number): void {
+    const reference = block[0]
+    if (reference === undefined) return
+    let hasDrive = false
+    let drivePos = false
+    let driveNeg = false
+    let alphaRef = 0
+    for (const member of block) {
+      if (member.component.rotationDrive === 0) continue
+      hasDrive = true
+      const projected = member.sign * member.component.rotationDrive
+      if (projected > 0) drivePos = true
+      else driveNeg = true
+      alphaRef += projected * member.ratio * Math.abs(member.component.getAngularAcceleration())
+    }
+    if (drivePos && driveNeg) {
+      for (const member of block) {
+        this.lockedComponents.add(member.component)
+        member.component.rotationSpeed = 0
+      }
+      return
+    }
+    let omegaRef = reference.component.rotationSpeed
+    if (hasDrive) {
+      omegaRef += alphaRef * dt
+    } else {
+      const decay = FRICTION_ALPHA * dt
+      omegaRef = omegaRef > 0 ? Math.max(0, omegaRef - decay) : Math.min(0, omegaRef + decay)
+    }
+    for (const member of block) {
+      member.component.rotationSpeed = omegaRef * member.ratio * member.sign
     }
   }
 
@@ -81,51 +137,5 @@ export class RotationSystem {
       }
     }
     return false
-  }
-
-  private driveCrank(component: BaseComponent, dt: number): void {
-    const target = component.rotationDrive * TWO_PI
-    const rate = (TWO_PI / CRANK_RAMP_SECONDS) * dt
-    if (component.rotationSpeed < target) {
-      component.rotationSpeed = Math.min(target, component.rotationSpeed + rate)
-    } else {
-      component.rotationSpeed = Math.max(target, component.rotationSpeed - rate)
-    }
-  }
-
-  private propagate(source: BaseComponent, visited: Set<BaseComponent>): BaseComponent[] | null {
-    const states = new Map<BaseComponent, DriveState>()
-    const queue: Array<{ component: BaseComponent; dir: number; speed: number }> = []
-    const sourceDir = source.rotationSpeed >= 0 ? 1 : -1
-    states.set(source, { dir: sourceDir, speed: Math.abs(source.rotationSpeed) })
-    queue.push({ component: source, dir: sourceDir, speed: Math.abs(source.rotationSpeed) })
-    let conflict = false
-    while (queue.length > 0) {
-      const entry = queue.pop()
-      if (entry === undefined) break
-      const neighbors = this.adjacency.get(entry.component) ?? []
-      for (const neighbor of neighbors) {
-        const nextDir = -entry.dir
-        const nextSpeed = entry.speed * (entry.component.teeth / neighbor.teeth)
-        const existing = states.get(neighbor)
-        if (existing !== undefined) {
-          if (existing.dir !== nextDir && (existing.speed !== 0 || nextSpeed !== 0)) {
-            conflict = true
-          }
-          if (nextSpeed > existing.speed) existing.speed = nextSpeed
-          continue
-        }
-        states.set(neighbor, { dir: nextDir, speed: nextSpeed })
-        queue.push({ component: neighbor, dir: nextDir, speed: nextSpeed })
-      }
-    }
-    for (const [component, state] of states) {
-      visited.add(component)
-      if (!conflict) {
-        component.rotationSpeed = state.dir * state.speed
-      }
-    }
-    if (!conflict) return null
-    return [...states.keys()]
   }
 }
