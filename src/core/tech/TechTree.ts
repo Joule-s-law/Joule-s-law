@@ -29,6 +29,7 @@ export interface TechNode {
   maxLevel: number
   baseCost: number
   costScaling: number
+  requiredParentLevel?: number
   effects: TechEffect[]
 }
 
@@ -194,6 +195,17 @@ const TECH_LIST: TechNode[] = [
       { kind: 'unlockWireMaterial', target: 'superconductor', perLevel: 0, minLevel: 2 },
     ],
   },
+  {
+    id: 'ender_interface',
+    displayName: '末影接口',
+    description: '在世界的边界上凿一扇门：解锁"第四发电机"——它的电动势不是来自这个世界，而是来自正在观测你的未知存在。它们是谁？它们想要什么？只有把门打开的人才知道。',
+    parentId: 'physics_must_3',
+    maxLevel: 1,
+    baseCost: 9000,
+    costScaling: 1,
+    requiredParentLevel: 5,
+    effects: [{ kind: 'unlockComponents', perLevel: 0, minLevel: 1, target: 'fourth_generator' }],
+  },
 ]
 
 export const TECH_NODES: TechNode[] = TECH_LIST
@@ -231,7 +243,14 @@ export class TechTree {
     const node = this.getNode(id)
     if (node === undefined) return false
     if (node.parentId === null) return true
-    return this.getLevel(node.parentId) >= 1
+    return this.getLevel(node.parentId) >= (node.requiredParentLevel ?? 1)
+  }
+
+  isRevealed(id: string): boolean {
+    const node = this.getNode(id)
+    if (node === undefined) return false
+    if (node.requiredParentLevel === undefined) return true
+    return this.getLevel(node.parentId ?? '') >= node.requiredParentLevel
   }
 
   canBuy(id: string): boolean {

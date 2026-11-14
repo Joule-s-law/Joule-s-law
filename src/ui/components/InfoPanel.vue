@@ -48,6 +48,20 @@
         <div class="row"><span>输入电流</span><span>{{ Math.abs(info.inputCurrent).toFixed(3) }} A</span></div>
       </div>
 
+      <div v-if="info.isFourthGenerator" class="extra">
+        <div class="row">
+          <span>名称</span>
+          <input
+            class="name-input"
+            :value="info.fourthGenName"
+            maxlength="24"
+            @change="game.renameFourthGenerator(($event.target as HTMLInputElement).value)"
+          />
+        </div>
+        <div class="row"><span>外部总电动势</span><span :class="{ danger: info.externalEmf < 0 }">{{ info.externalEmf >= 0 ? '+' : '' }}{{ info.externalEmf.toFixed(2) }} V</span></div>
+        <div class="row uuid-row"><span>uuid</span><span class="uuid">{{ info.fourthGenUuid }}</span></div>
+      </div>
+
       <button class="action sell" @click="game.sellSelected()">出售（返还 50%）</button>
     </template>
     <p v-else class="empty">点击电路板上的元件查看详情。</p>
@@ -147,6 +161,26 @@ function materialName(id: string): string {
 .material-btns button.active {
   border-color: #ffd54f;
   color: #ffd54f;
+}
+.name-input {
+  width: 140px;
+  padding: 4px 8px;
+  background: #1b2230;
+  color: #ecf0f1;
+  border: 1px solid #3a4658;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.name-input:focus {
+  outline: none;
+  border-color: #b388ff;
+}
+.uuid-row .uuid {
+  font-size: 10px;
+  color: #78909c;
+  word-break: break-all;
+  max-width: 150px;
+  text-align: right;
 }
 .action.sell {
   margin-top: 10px;

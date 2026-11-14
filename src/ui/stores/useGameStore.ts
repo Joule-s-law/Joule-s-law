@@ -11,7 +11,9 @@ import type { BaseComponent } from '../../core/components/BaseComponent'
 import { WireComponent } from '../../core/components/behaviors/WireComponent'
 import { SwitchComponent } from '../../core/components/behaviors/SwitchComponent'
 import { BatteryComponent } from '../../core/components/behaviors/BatteryComponent'
+import { FourthGeneratorComponent } from '../../core/components/behaviors/FourthGeneratorComponent'
 import { VoltageTransformerComponent } from '../../core/components/behaviors/VoltageTransformerComponent'
+import { FourthWallClient } from '../../net/FourthWallClient'
 import { WIRE } from '../../core/components/registry/definitions'
 import { WIRE_MATERIALS } from '../../core/components/registry/wireMaterials'
 import { CELL_SIZE, GRID_COLS, GRID_ROWS, portPosition, wireDistance } from '../board/boardMath'
@@ -41,6 +43,10 @@ export interface ComponentInfo {
   isTransformer: boolean
   inputVoltage: number
   inputCurrent: number
+  isFourthGenerator: boolean
+  fourthGenUuid: string
+  fourthGenName: string
+  externalEmf: number
 }
 
 export interface TechNodeInfo {
@@ -80,6 +86,26 @@ export const useGameStore = defineStore('game', () => {
   const uids = new WeakMap<BaseComponent, number>()
   let nextUid = 1
 
+  const fourthWall = new FourthWallClient('ws://localhost:25565/ws', (totals) => {
+    for (const component of sim.components) {
+      if (!(component instanceof FourthGeneratorComponent)) continue
+      component.externalEmf = totals[component.uuid] ?? 0
+    }
+  })
+  let lastGeneratorSync = ''
+
+  function syncFourthGenerators(): void {
+    if (!techTree.isComponentUnlocked('fourth_generator')) return
+    fourthWall.connect()
+    const list = sim.components
+      .filter((component): component is FourthGeneratorComponent => component instanceof FourthGeneratorComponent)
+      .map((component) => ({ uuid: component.uuid, name: component.customName }))
+    const key = JSON.stringify(list)
+    if (key === lastGeneratorSync) return
+    lastGeneratorSync = key
+    fourthWall.sendSync(list)
+  }
+
   function uidOf(component: BaseComponent): number {
     let uid = uids.get(component)
     if (uid === undefined) {
@@ -110,6 +136,7 @@ export const useGameStore = defineStore('game', () => {
       selectedComponent.value = null
       selectedInfo.value = null
     }
+    syncFourthGenerators()
   }
 
   function buildInfo(component: BaseComponent): ComponentInfo {
@@ -135,6 +162,10 @@ export const useGameStore = defineStore('game', () => {
       isTransformer: component instanceof VoltageTransformerComponent,
       inputVoltage: component instanceof VoltageTransformerComponent ? component.getInputVoltage() : 0,
       inputCurrent: component instanceof VoltageTransformerComponent ? component.getInputCurrent() : 0,
+      isFourthGenerator: component instanceof FourthGeneratorComponent,
+      fourthGenUuid: component instanceof FourthGeneratorComponent ? component.uuid : '',
+      fourthGenName: component instanceof FourthGeneratorComponent ? component.customName : '',
+      externalEmf: component instanceof FourthGeneratorComponent ? component.externalEmf : 0,
     }
   }
 
@@ -163,6 +194,7 @@ export const useGameStore = defineStore('game', () => {
   function techNodeInfos(): TechNodeInfo[] {
     const infos: TechNodeInfo[] = []
     for (const node of TECH_NODES) {
+      if (!techTree.isRevealed(node.id)) continue
       const layout = techLayout.positions[node.id] ?? defaultNodePosition(node)
       const parent = node.parentId !== null ? TECH_NODES.find((n) => n.id === node.parentId) : undefined
       infos.push({
@@ -421,6 +453,15 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
+  function renameFourthGenerator(name: string): void {
+    const selected = selectedComponent.value
+    if (!(selected instanceof FourthGeneratorComponent)) return
+    const trimmed = name.trim()
+    selected.customName = trimmed === '' ? selected.def.displayName : trimmed.slice(0, 24)
+    lastGeneratorSync = ''
+    refreshSnapshot()
+  }
+
   function unlockedWireMaterials(): string[] {
     return [...WIRE_MATERIALS.keys()].filter((id) => techTree.isWireMaterialUnlocked(id))
   }
@@ -470,6 +511,7 @@ export const useGameStore = defineStore('game', () => {
     sellSelected,
     setWireMaterial,
     toggleSwitch,
+    renameFourthGenerator,
     unlockedWireMaterials,
     manualSave,
     CELL_SIZE,

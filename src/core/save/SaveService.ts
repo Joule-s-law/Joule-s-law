@@ -2,6 +2,7 @@ import type { BaseComponent } from '../components/BaseComponent'
 import { WireComponent } from '../components/behaviors/WireComponent'
 import { BatteryComponent } from '../components/behaviors/BatteryComponent'
 import { SwitchComponent } from '../components/behaviors/SwitchComponent'
+import { FourthGeneratorComponent } from '../components/behaviors/FourthGeneratorComponent'
 import { createComponentById } from '../components/registry/componentRegistry'
 import type { Simulation } from '../sim/Simulation'
 import type { TechTree } from '../tech/TechTree'
@@ -23,6 +24,8 @@ interface SavedComponent {
   wireControlPointB?: { x: number; y: number }
   batterySoc?: number
   switchClosed?: boolean
+  fourthGenUuid?: string
+  fourthGenName?: string
 }
 
 interface SavedLink {
@@ -109,6 +112,9 @@ export class SaveService {
         : {}),
       ...(component instanceof BatteryComponent ? { batterySoc: component.stateOfCharge } : {}),
       ...(component instanceof SwitchComponent ? { switchClosed: component.closed } : {}),
+      ...(component instanceof FourthGeneratorComponent
+        ? { fourthGenUuid: component.uuid, fourthGenName: component.customName }
+        : {}),
     }))
     const componentIndex = new Map<BaseComponent, number>(this.sim.components.map((component, index) => [component, index]))
     const links: SavedLink[] = []
@@ -175,6 +181,8 @@ export class SaveService {
           wireControlPointB: saved.wireControlPointB,
           batteryStateOfCharge: saved.batterySoc,
           switchClosed: saved.switchClosed,
+          fourthGenUuid: saved.fourthGenUuid,
+          fourthGenName: saved.fourthGenName,
         })
       } catch {
         continue

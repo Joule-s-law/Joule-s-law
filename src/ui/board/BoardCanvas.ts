@@ -1,6 +1,7 @@
 import type { BaseComponent } from '../../core/components/BaseComponent'
 import { WireComponent } from '../../core/components/behaviors/WireComponent'
 import { RheostatComponent } from '../../core/components/behaviors/RheostatComponent'
+import { FourthGeneratorComponent } from '../../core/components/behaviors/FourthGeneratorComponent'
 import { VoltageTransformerComponent } from '../../core/components/behaviors/VoltageTransformerComponent'
 import { FieldSensorComponent } from '../../core/components/behaviors/FieldSensorComponent'
 import { EnergyType } from '../../core/energy/EnergyType'
@@ -578,8 +579,24 @@ export class BoardCanvas {
       ctx.font = '11px system-ui, sans-serif'
       ctx.textAlign = 'center'
       const isDiode = component.def.behaviorId === 'diode'
-      ctx.fillText(this.shortName(component.def.displayName), x + w / 2, isDiode ? y + 15 : y + h / 2 + 4)
+      const isFourth = component instanceof FourthGeneratorComponent
+      ctx.fillText(this.shortName(isFourth ? component.customName : component.def.displayName), x + w / 2, isDiode ? y + 15 : y + h / 2 + 4)
       if (isDiode) this.drawDiodeSymbol(x, y, w, h)
+      if (isFourth) {
+        ctx.strokeStyle = '#b388ff'
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.moveTo(x + 6, y + h / 2)
+        ctx.lineTo(x + w * 0.34, y + h / 2)
+        ctx.lineTo(x + w * 0.44, y + h * 0.28)
+        ctx.lineTo(x + w * 0.56, y + h * 0.72)
+        ctx.lineTo(x + w * 0.66, y + h / 2)
+        ctx.lineTo(x + w - 6, y + h / 2)
+        ctx.stroke()
+        ctx.fillStyle = component.externalEmf !== 0 ? '#b388ff' : '#78909c'
+        ctx.font = '10px system-ui, sans-serif'
+        ctx.fillText((component.externalEmf >= 0 ? '+' : '') + component.externalEmf.toFixed(2) + ' V（来自画布之外）', x + w / 2, y + h - 20)
+      }
       if (component instanceof RheostatComponent) this.drawRheostatSlider(component)
       if (component.def.portCount === 4) {
         const gain = component.def.behaviorParams['gain'] ?? 2

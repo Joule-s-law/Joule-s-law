@@ -12,6 +12,7 @@ import { GearComponent } from '../behaviors/GearComponent'
 import { DiodeComponent } from '../behaviors/DiodeComponent'
 import { RheostatComponent } from '../behaviors/RheostatComponent'
 import { VoltageTransformerComponent } from '../behaviors/VoltageTransformerComponent'
+import { FourthGeneratorComponent } from '../behaviors/FourthGeneratorComponent'
 import { ALL_DEFS } from './definitions'
 
 export interface ComponentCreateOptions {
@@ -23,6 +24,8 @@ export interface ComponentCreateOptions {
   wireControlPointB?: { x: number; y: number }
   batteryStateOfCharge?: number
   switchClosed?: boolean
+  fourthGenUuid?: string
+  fourthGenName?: string
 }
 
 export const COMPONENT_DEFS: ReadonlyMap<string, ComponentDefinition> = new Map(
@@ -62,6 +65,11 @@ export function createComponent(def: ComponentDefinition, options?: ComponentCre
       return new RheostatComponent(def)
     case 'voltageTransformer':
       return new VoltageTransformerComponent(def)
+    case 'fourthGenerator':
+      return new FourthGeneratorComponent(def, {
+        uuid: options?.fourthGenUuid,
+        customName: options?.fourthGenName,
+      })
   }
 }
 

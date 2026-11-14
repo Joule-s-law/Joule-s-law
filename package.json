@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview --host --port 4173",
+    "server": "pnpm --filter joules-law-server dev",
+    "server:start": "pnpm --filter joules-law-server start",
     "test": "vitest run",
     "test:watch": "vitest"
   },

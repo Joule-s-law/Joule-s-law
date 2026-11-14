@@ -21,6 +21,7 @@ import { BIG_GEAR } from './big_gear'
 import { DIODE } from './diode'
 import { RHEOSTAT } from './rheostat'
 import { VOLTAGE_DOUBLER, VOLTAGE_HALVER } from './voltage_transformer'
+import { FOURTH_GENERATOR } from './fourth_generator'
 
 export const ALL_DEFS: ComponentDefinition[] = [
   HAND_CRANK,
@@ -46,6 +47,7 @@ export const ALL_DEFS: ComponentDefinition[] = [
   RHEOSTAT,
   VOLTAGE_DOUBLER,
   VOLTAGE_HALVER,
+  FOURTH_GENERATOR,
 ]
 
 export {
@@ -72,4 +74,5 @@ export {
   RHEOSTAT,
   VOLTAGE_DOUBLER,
   VOLTAGE_HALVER,
+  FOURTH_GENERATOR,
 }

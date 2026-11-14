@@ -1,4 +1,4 @@
-export type BehaviorId = 'voltageSource' | 'resistive' | 'wire' | 'converter' | 'turbine' | 'battery' | 'switch' | 'fieldSensor' | 'gear' | 'diode' | 'rheostat' | 'voltageTransformer'
+export type BehaviorId = 'voltageSource' | 'resistive' | 'wire' | 'converter' | 'turbine' | 'battery' | 'switch' | 'fieldSensor' | 'gear' | 'diode' | 'rheostat' | 'voltageTransformer' | 'fourthGenerator'
 
 export interface ComponentDefinition {
   id: string
