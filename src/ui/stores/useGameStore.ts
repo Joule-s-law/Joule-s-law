@@ -418,6 +418,7 @@ export const useGameStore = defineStore('game', () => {
     if (cellX < 0 || cellY < 0 || cellX + width > GRID_COLS || cellY + height > GRID_ROWS) return false
     for (const other of sim.components) {
       if (other === ignore) continue
+      if (other instanceof WireComponent || other instanceof ChainDriveComponent) continue
       if (other.x < cellX + width && other.x + other.width > cellX && other.y < cellY + height && other.y + other.height > cellY) {
         return false
       }
