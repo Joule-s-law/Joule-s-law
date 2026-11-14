@@ -53,9 +53,9 @@
           <span>名称</span>
           <input
             class="name-input"
-            :value="info.fourthGenName"
+            v-model="fourthGenNameDraft"
             maxlength="24"
-            @change="game.renameFourthGenerator(($event.target as HTMLInputElement).value)"
+            @change="game.renameFourthGenerator(fourthGenNameDraft)"
           />
         </div>
         <div class="row"><span>外部总电动势</span><span :class="{ danger: info.externalEmf < 0 }">{{ info.externalEmf >= 0 ? '+' : '' }}{{ info.externalEmf.toFixed(2) }} V</span></div>
@@ -69,12 +69,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useGameStore } from '../stores/useGameStore'
 import { WIRE_MATERIALS } from '../../core/components/registry/wireMaterials'
 
 const game = useGameStore()
 const info = computed(() => game.selectedInfo)
+const fourthGenNameDraft = ref('')
+watch(
+  () => info.value?.fourthGenUuid,
+  () => {
+    fourthGenNameDraft.value = info.value?.fourthGenName ?? ''
+  },
+  { immediate: true },
+)
 const currentRatio = computed(() => {
   const data = info.value
   return data !== null ? Math.abs(data.current) / Math.max(0.001, data.ratedCurrent) : 0

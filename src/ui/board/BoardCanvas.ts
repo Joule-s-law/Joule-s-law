@@ -580,9 +580,8 @@ export class BoardCanvas {
       ctx.textAlign = 'center'
       const isDiode = component.def.behaviorId === 'diode'
       const isFourth = component instanceof FourthGeneratorComponent
-      ctx.fillText(this.shortName(isFourth ? component.customName : component.def.displayName), x + w / 2, isDiode ? y + 15 : y + h / 2 + 4)
-      if (isDiode) this.drawDiodeSymbol(x, y, w, h)
       if (isFourth) {
+        this.drawFittedText(component.customName, x + w / 2, y + 15, w - 8)
         ctx.strokeStyle = '#b388ff'
         ctx.lineWidth = 1.5
         ctx.beginPath()
@@ -593,10 +592,10 @@ export class BoardCanvas {
         ctx.lineTo(x + w * 0.66, y + h / 2)
         ctx.lineTo(x + w - 6, y + h / 2)
         ctx.stroke()
-        ctx.fillStyle = component.externalEmf !== 0 ? '#b388ff' : '#78909c'
-        ctx.font = '10px system-ui, sans-serif'
-        ctx.fillText((component.externalEmf >= 0 ? '+' : '') + component.externalEmf.toFixed(2) + ' V（来自画布之外）', x + w / 2, y + h - 20)
+      } else {
+        this.drawFittedText(component.def.displayName, x + w / 2, isDiode ? y + 15 : y + h / 2 + 4, w - 8)
       }
+      if (isDiode) this.drawDiodeSymbol(x, y, w, h)
       if (component instanceof RheostatComponent) this.drawRheostatSlider(component)
       if (component.def.portCount === 4) {
         const gain = component.def.behaviorParams['gain'] ?? 2
@@ -607,7 +606,7 @@ export class BoardCanvas {
         ctx.fillText('入 ▸ 出', x + w / 2, y + h - 20)
       }
       const current = Math.abs(component.current)
-      if (current > 0.0005) {
+      if (current > 0.0005 && !isFourth) {
         ctx.fillStyle = '#4fc3f7'
         ctx.font = '9px system-ui, sans-serif'
         ctx.fillText(current.toFixed(2) + 'A', x + w / 2, y + h - 8)
@@ -627,7 +626,7 @@ export class BoardCanvas {
       return
     }
     const ctx = this.ctx
-    const lines: string[] = [component.def.displayName]
+    const lines: string[] = [component instanceof FourthGeneratorComponent ? component.customName : component.def.displayName]
     if (component.def.portCount > 0) {
       lines.push('R = ' + this.formatPhysical(component.getResistance()) + ' Ω')
       lines.push('I = ' + Math.abs(component.current).toFixed(3) + ' A')
@@ -760,8 +759,22 @@ export class BoardCanvas {
     ctx.fillText('⚠ 传动系统已锁死，请检查传动结构', centerX, textY)
   }
 
-  private shortName(displayName: string): string {
-    return displayName.slice(0, 4)
+  private drawFittedText(text: string, centerX: number, y: number, maxWidth: number): void {
+    const ctx = this.ctx
+    let fontSize = 11
+    while (fontSize > 7) {
+      ctx.font = fontSize + 'px system-ui, sans-serif'
+      if (ctx.measureText(text).width <= maxWidth) break
+      fontSize -= 1
+    }
+    let display = text
+    if (ctx.measureText(display).width > maxWidth) {
+      while (display.length > 1 && ctx.measureText(display + '…').width > maxWidth) {
+        display = display.slice(0, -1)
+      }
+      display += '…'
+    }
+    ctx.fillText(display, centerX, y)
   }
 
   private drawPorts(): void {
