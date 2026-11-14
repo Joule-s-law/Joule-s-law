@@ -21,6 +21,8 @@ import { BIG_GEAR } from './big_gear'
 import { CHAIN_DRIVE } from './chain_drive'
 import { DIODE } from './diode'
 import { RHEOSTAT } from './rheostat'
+import { AMMETER } from './ammeter'
+import { VOLTMETER } from './voltmeter'
 import { VOLTAGE_DOUBLER, VOLTAGE_HALVER } from './voltage_transformer'
 import { FOURTH_GENERATOR } from './fourth_generator'
 
@@ -47,6 +49,8 @@ export const ALL_DEFS: ComponentDefinition[] = [
   BIG_GEAR,
   CHAIN_DRIVE,
   RHEOSTAT,
+  AMMETER,
+  VOLTMETER,
   VOLTAGE_DOUBLER,
   VOLTAGE_HALVER,
   FOURTH_GENERATOR,
@@ -75,6 +79,8 @@ const COMPONENT_LABELS: Record<string, string[]> = {
   big_gear: ['机械传动'],
   chain_drive: ['机械传动'],
   rheostat: ['欧姆定律', '焦耳热'],
+  ammeter: ['测量'],
+  voltmeter: ['测量'],
   voltage_doubler: ['电磁感应'],
   voltage_halver: ['电磁感应'],
   fourth_generator: ['打破第四面墙'],
@@ -107,6 +113,8 @@ export {
   BIG_GEAR,
   CHAIN_DRIVE,
   RHEOSTAT,
+  AMMETER,
+  VOLTMETER,
   VOLTAGE_DOUBLER,
   VOLTAGE_HALVER,
   FOURTH_GENERATOR,

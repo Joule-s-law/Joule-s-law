@@ -24,6 +24,7 @@ export interface BoardCallbacks {
   onComponentClick(component: BaseComponent): void
   onComponentMove(component: BaseComponent, cellX: number, cellY: number): void
   onPortClick(component: BaseComponent, portIndex: number): void
+  onToggleMonitor(component: BaseComponent): void
   onBlankClick(x: number, y: number): void
   onEscape(): void
 }
@@ -126,6 +127,7 @@ export class BoardCanvas {
   private hoverComponent: BaseComponent | null = null
   private hoverCandidates: BaseComponent[] = []
   private hoverPickIndex = 0
+  private tabHeld = false
   private floats: FloatText[] = []
 
   constructor(
@@ -145,6 +147,8 @@ export class BoardCanvas {
     window.addEventListener('mousemove', this.handleWindowMouseMove)
     window.addEventListener('mouseup', this.handleWindowMouseUp)
     window.addEventListener('keydown', this.handleKeyDown)
+    window.addEventListener('keyup', this.handleKeyUp)
+    window.addEventListener('blur', this.handleWindowBlur)
     this.start()
   }
 
@@ -158,6 +162,8 @@ export class BoardCanvas {
     window.removeEventListener('mousemove', this.handleWindowMouseMove)
     window.removeEventListener('mouseup', this.handleWindowMouseUp)
     window.removeEventListener('keydown', this.handleKeyDown)
+    window.removeEventListener('keyup', this.handleKeyUp)
+    window.removeEventListener('blur', this.handleWindowBlur)
   }
 
   private start(): void {
@@ -311,6 +317,10 @@ export class BoardCanvas {
     if (event.button === 0) {
       const sliderHit = this.rheostatSliderHit()
       if (sliderHit !== null) {
+        if (this.tabHeld) {
+          this.callbacks.onToggleMonitor(sliderHit)
+          return
+        }
         this.sliderDrag = sliderHit
         this.applySliderDrag()
         this.callbacks.onComponentClick(sliderHit)
@@ -333,6 +343,10 @@ export class BoardCanvas {
       const picked = this.hoverCandidates[this.hoverPickIndex] ?? this.hoverCandidates[0]
       if (picked === undefined) {
         this.callbacks.onBlankClick(this.mouseX / CELL_SIZE, this.mouseY / CELL_SIZE)
+        return
+      }
+      if (this.tabHeld) {
+        this.callbacks.onToggleMonitor(picked)
         return
       }
       this.callbacks.onComponentClick(picked)
@@ -364,6 +378,18 @@ export class BoardCanvas {
     if (event.key === 'Escape') {
       this.callbacks.onEscape()
     }
+    if (event.key === 'Tab') {
+      event.preventDefault()
+      this.tabHeld = true
+    }
+  }
+
+  private handleKeyUp = (event: KeyboardEvent): void => {
+    if (event.key === 'Tab') this.tabHeld = false
+  }
+
+  private handleWindowBlur = (): void => {
+    this.tabHeld = false
   }
 
   private mouseCell(): { cellX: number; cellY: number } {
@@ -465,6 +491,7 @@ export class BoardCanvas {
     this.updateFloats()
     this.drawFloats()
     this.drawHoverTooltip()
+    this.drawMonitoredTooltips()
     this.drawIntersectionPanel()
   }
 
@@ -758,6 +785,7 @@ export class BoardCanvas {
       ctx.textAlign = 'center'
       const isDiode = component.def.behaviorId === 'diode'
       const isFourth = component instanceof FourthGeneratorComponent
+      const isMeter = component.def.id === 'ammeter' || component.def.id === 'voltmeter'
       if (isFourth) {
         this.drawFittedText(component.customName, x + w / 2, y + 15, w - 8)
         ctx.strokeStyle = '#b388ff'
@@ -771,9 +799,10 @@ export class BoardCanvas {
         ctx.lineTo(x + w - 6, y + h / 2)
         ctx.stroke()
       } else {
-        this.drawFittedText(component.def.displayName, x + w / 2, isDiode ? y + 15 : y + h / 2 + 4, w - 8)
+        this.drawFittedText(component.def.displayName, x + w / 2, isDiode || isMeter ? y + 10 : y + h / 2 + 4, w - 8)
       }
       if (isDiode) this.drawDiodeSymbol(x, y, w, h)
+      if (isMeter) this.drawMeterDial(component, x, y, w, h)
       if (component instanceof RheostatComponent) this.drawRheostatSlider(component)
       if (component.def.portCount === 4) {
         const gain = component.def.behaviorParams['gain'] ?? 2
@@ -793,18 +822,7 @@ export class BoardCanvas {
     this.drawLockedWarnings()
   }
 
-  private drawHoverTooltip(): void {
-    const drag = this.dragComponent
-    const slider = this.sliderDrag
-    const pinned = drag !== null || slider !== null
-    const component = drag !== null ? drag.component : slider !== null ? slider : this.hoverComponent
-    if (component === null) return
-    if (!pinned && this.hoverCandidates.length > 1) return
-    if (!pinned && !component.occupies(Math.floor(this.mouseX / CELL_SIZE), Math.floor(this.mouseY / CELL_SIZE))) {
-      this.hoverComponent = null
-      return
-    }
-    const ctx = this.ctx
+  private buildTooltipLines(component: BaseComponent): string[] {
     const lines: string[] = [component instanceof FourthGeneratorComponent ? component.customName : component.def.displayName]
     const isRotatable = component.def.behaviorTags['rotatable'] === '1'
     if (component.def.portCount > 0) {
@@ -825,13 +843,69 @@ export class BoardCanvas {
     if (isRotatable) {
       lines.push('转速 = ' + formatAngularValue(component.rotationSpeed, this.settings.angularUnit))
     }
-    ctx.font = '11px system-ui, sans-serif'
+    return lines
+  }
+
+  private tooltipSize(lines: string[]): { boxW: number; boxH: number } {
+    this.ctx.font = '11px system-ui, sans-serif'
     let width = 0
     for (const line of lines) {
-      width = Math.max(width, ctx.measureText(line).width)
+      width = Math.max(width, this.ctx.measureText(line).width)
     }
-    const boxW = width + 18
-    const boxH = lines.length * 16 + 10
+    return { boxW: width + 18, boxH: lines.length * 16 + 10 }
+  }
+
+  private drawTooltipAt(lines: string[], px: number, py: number, wireColor: string | null): void {
+    const { boxW, boxH } = this.tooltipSize(lines)
+    const ctx = this.ctx
+    ctx.fillStyle = 'rgba(20, 26, 38, 0.92)'
+    ctx.strokeStyle = '#3a4a63'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.roundRect(px, py, boxW, boxH, 6)
+    ctx.fill()
+    ctx.stroke()
+    ctx.textAlign = 'left'
+    ctx.font = '11px system-ui, sans-serif'
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? ''
+      if (i === 0 && wireColor !== null) {
+        ctx.fillStyle = wireColor
+      } else {
+        ctx.fillStyle = i === 0 ? '#4fc3f7' : '#cfd8dc'
+      }
+      ctx.fillText(line, px + 9, py + 17 + i * 16)
+    }
+  }
+
+  private drawMonitoredTooltips(): void {
+    for (const component of this.callbacks.getComponents()) {
+      if (!component.monitored) continue
+      const lines = this.buildTooltipLines(component)
+      const { boxW, boxH } = this.tooltipSize(lines)
+      const centerX = (component.x + component.width / 2) * CELL_SIZE
+      const top = component.y * CELL_SIZE
+      let px = centerX - boxW / 2
+      let py = top - boxH - 10
+      if (py < 4) py = top + component.height * CELL_SIZE + 10
+      px = Math.max(4, Math.min(this.canvas.width - boxW - 4, px))
+      this.drawTooltipAt(lines, px, py, component instanceof WireComponent ? component.getVisualColor() : null)
+    }
+  }
+
+  private drawHoverTooltip(): void {
+    const drag = this.dragComponent
+    const slider = this.sliderDrag
+    const pinned = drag !== null || slider !== null
+    const component = drag !== null ? drag.component : slider !== null ? slider : this.hoverComponent
+    if (component === null) return
+    if (!pinned && this.hoverCandidates.length > 1) return
+    if (!pinned && !component.occupies(Math.floor(this.mouseX / CELL_SIZE), Math.floor(this.mouseY / CELL_SIZE))) {
+      this.hoverComponent = null
+      return
+    }
+    const lines = this.buildTooltipLines(component)
+    const { boxW, boxH } = this.tooltipSize(lines)
     let px: number
     let py: number
     if (pinned) {
@@ -843,23 +917,7 @@ export class BoardCanvas {
       if (px + boxW > this.canvas.clientWidth) px = this.mouseX - boxW - 10
       if (py + boxH > this.canvas.clientHeight) py = this.mouseY - boxH - 10
     }
-    ctx.fillStyle = 'rgba(20, 26, 38, 0.92)'
-    ctx.strokeStyle = '#3a4a63'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.roundRect(px, py, boxW, boxH, 6)
-    ctx.fill()
-    ctx.stroke()
-    ctx.textAlign = 'left'
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i] ?? ''
-      if (i === 0 && component instanceof WireComponent) {
-        ctx.fillStyle = component.getVisualColor()
-      } else {
-        ctx.fillStyle = i === 0 ? '#4fc3f7' : '#cfd8dc'
-      }
-      ctx.fillText(line, px + 9, py + 17 + i * 16)
-    }
+    this.drawTooltipAt(lines, px, py, component instanceof WireComponent ? component.getVisualColor() : null)
   }
 
   private drawIntersectionPanel(): void {
@@ -912,6 +970,29 @@ export class BoardCanvas {
   private formatResistanceDisplay(value: number): string {
     if (value === Number.POSITIVE_INFINITY) return '∞（断开）'
     return formatWithPrefix(value, this.settings.prefixResistance, 'Ω')
+  }
+
+  private drawMeterDial(component: BaseComponent, x: number, y: number, w: number, h: number): void {
+    const ctx = this.ctx
+    const cx = x + w / 2
+    const cy = y + h / 2 + 4
+    const radius = Math.min(w, h) / 2 - 7
+    ctx.fillStyle = '#f4f4ec'
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = '#2c3648'
+    ctx.lineWidth = 2
+    ctx.stroke()
+    const isAmmeter = component.def.id === 'ammeter'
+    const value = isAmmeter ? Math.abs(component.current) : Math.abs(component.voltage)
+    const text = isAmmeter
+      ? formatWithPrefix(value, this.settings.prefixCurrent, 'A')
+      : formatWithPrefix(value, this.settings.prefixVoltage, 'V')
+    ctx.fillStyle = '#10141b'
+    ctx.font = '9px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(text, cx, cy + 3)
   }
 
   private drawRealGear(component: BaseComponent, x: number, y: number, w: number, h: number): void {

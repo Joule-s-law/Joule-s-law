@@ -53,6 +53,7 @@ export interface ComponentInfo {
   externalEmf: number
   rotatable: boolean
   rotationSpeed: number
+  monitored: boolean
 }
 
 export interface TechNodeInfo {
@@ -190,6 +191,7 @@ export const useGameStore = defineStore('game', () => {
       externalEmf: component instanceof FourthGeneratorComponent ? component.externalEmf : 0,
       rotatable: component.def.behaviorTags['rotatable'] === '1',
       rotationSpeed: component.rotationSpeed,
+      monitored: component.monitored,
     }
   }
 
@@ -669,6 +671,13 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
+  function toggleMonitor(component?: BaseComponent): void {
+    const target = component ?? selectedComponent.value
+    if (target === null) return
+    target.monitored = !target.monitored
+    refreshSnapshot()
+  }
+
   function renameFourthGenerator(name: string): void {
     const selected = selectedComponent.value
     if (!(selected instanceof FourthGeneratorComponent)) return
@@ -740,6 +749,7 @@ export const useGameStore = defineStore('game', () => {
     setWireMaterial,
     setWireColor,
     toggleSwitch,
+    toggleMonitor,
     renameFourthGenerator,
     applyWsUrl,
     unlockedWireMaterials,

@@ -88,6 +88,9 @@
         <div class="row uuid-row"><span>uuid</span><span class="uuid">{{ info.fourthGenUuid }}</span></div>
       </div>
 
+      <button class="action monitor" :class="{ on: info.monitored }" @click="game.toggleMonitor()">
+        实时监视：{{ info.monitored ? '开' : '关' }}（按住 Tab 点击元件可快捷切换）
+      </button>
       <button class="action sell" @click="game.sellSelected()">出售（返还 50%）</button>
     </template>
     <p v-else class="empty">点击电路板上的元件查看详情。</p>
@@ -267,6 +270,10 @@ function materialName(id: string): string {
   margin-top: 10px;
   border-color: #e74c3c;
   color: #e74c3c;
+}
+.action.monitor.on {
+  border-color: #4fc3f7;
+  color: #4fc3f7;
 }
 .empty {
   color: #78909c;

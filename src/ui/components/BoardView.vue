@@ -33,6 +33,7 @@ onMounted(() => {
     onComponentClick: (component: BaseComponent): void => game.selectComponent(component),
     onComponentMove: (component: BaseComponent, cellX: number, cellY: number): void => game.moveComponent(component, cellX, cellY),
     onPortClick: (component: BaseComponent, portIndex: number): void => game.onPortClick(component, portIndex),
+    onToggleMonitor: (component: BaseComponent): void => game.toggleMonitor(component),
     onBlankClick: (x: number, y: number): void => game.canvasBlankClick(x, y),
     onEscape: (): void => {
       game.cancelWirePending()

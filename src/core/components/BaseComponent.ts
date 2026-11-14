@@ -24,6 +24,7 @@ export abstract class BaseComponent {
   rotationSpeed = 0
   rotationAngle = 0
   rotationAngleAt = 0
+  monitored = false
 
   constructor(def: ComponentDefinition) {
     this.def = def

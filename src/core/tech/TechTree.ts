@@ -113,14 +113,14 @@ const TECH_LIST: TechNode[] = [
   {
     id: 'ohm',
     displayName: '欧姆',
-    description: '材料强度：全体元件额定电流 ×1.25/级；1 级解锁滑动变阻器。',
+    description: '材料强度：全体元件额定电流 ×1.25/级；1 级解锁滑动变阻器、电流表与电压表。',
     parentId: 'physics_must_3',
     maxLevel: 2,
     baseCost: 180,
     costScaling: 2,
     effects: [
       { kind: 'ratedCurrentFactor', perLevel: 1.25 },
-      { kind: 'unlockComponents', perLevel: 0, minLevel: 1, target: 'rheostat' },
+      { kind: 'unlockComponents', perLevel: 0, minLevel: 1, target: 'rheostat,ammeter,voltmeter' },
     ],
   },
   {
