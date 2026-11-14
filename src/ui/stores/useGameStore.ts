@@ -39,6 +39,7 @@ export interface ComponentInfo {
   switchClosed: boolean
   stateOfCharge: number
   wireMaterialId: string
+  wireVisualColor: string
   isMagneticSensor: boolean
   sensedFluxDensity: number
   sensedFlux: number
@@ -162,6 +163,7 @@ export const useGameStore = defineStore('game', () => {
       switchClosed: component instanceof SwitchComponent ? component.closed : false,
       stateOfCharge: component instanceof BatteryComponent ? component.stateOfCharge : 0,
       wireMaterialId: component instanceof WireComponent ? component.getMaterialId() : '',
+      wireVisualColor: component instanceof WireComponent ? component.getVisualColor() : '',
       isMagneticSensor: component.def.behaviorTags['sensorField'] === 'magnetic',
       sensedFluxDensity: component.getSensedFluxDensity(),
       sensedFlux: component.getSensedFlux(),
@@ -455,6 +457,13 @@ export const useGameStore = defineStore('game', () => {
     refreshSnapshot()
   }
 
+  function setWireColor(color: string | null): void {
+    const selected = selectedComponent.value
+    if (!(selected instanceof WireComponent)) return
+    selected.setVisualColor(color)
+    refreshSnapshot()
+  }
+
   function toggleSwitch(): void {
     const selected = selectedComponent.value
     if (selected instanceof SwitchComponent) {
@@ -528,6 +537,7 @@ export const useGameStore = defineStore('game', () => {
     sellComponent,
     sellSelected,
     setWireMaterial,
+    setWireColor,
     toggleSwitch,
     renameFourthGenerator,
     applyWsUrl,

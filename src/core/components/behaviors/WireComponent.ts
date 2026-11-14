@@ -1,7 +1,7 @@
 import type { ComponentDefinition } from '../ComponentDefinition'
 import { BaseComponent } from '../BaseComponent'
 import type { MnaModel } from '../../circuit/MnaModel'
-import { getWireMaterial, hasWireMaterial, DEFAULT_WIRE_MATERIAL_ID } from '../registry/wireMaterials'
+import { getWireMaterial, hasWireMaterial, DEFAULT_WIRE_MATERIAL_ID, wireMaterialColor } from '../registry/wireMaterials'
 import type { TickContext } from '../../sim/TickContext'
 import { CELL_SIZE } from '../../../shared/constants'
 
@@ -19,6 +19,14 @@ export class WireComponent extends BaseComponent {
   private controlPointA: WireAnchor
   private controlPointB: WireAnchor
   visualColor: string | null = null
+
+  getVisualColor(): string {
+    return this.visualColor ?? wireMaterialColor(this.materialId)
+  }
+
+  setVisualColor(color: string | null): void {
+    this.visualColor = color
+  }
 
   constructor(def: ComponentDefinition, options?: {
     materialId?: string

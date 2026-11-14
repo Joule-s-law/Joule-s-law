@@ -50,12 +50,6 @@ interface FloatText {
   born: number
 }
 
-const WIRE_COLORS: Record<string, string> = {
-  copper: '#b87333',
-  silver: '#c0c0c0',
-  superconductor: '#6ee7b7',
-}
-
 const FIELD_COLORS: Record<string, string> = {
   light: '255, 220, 120',
   sound: '120, 180, 255',
@@ -63,6 +57,32 @@ const FIELD_COLORS: Record<string, string> = {
 }
 
 const WIRE_PICK_COLORS = ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c', '#3498db', '#9b59b6', '#e84393']
+
+function randomWireColor(exclude: string): string {
+  const options = WIRE_PICK_COLORS.filter((color) => color !== exclude)
+  return options[Math.floor(Math.random() * options.length)] ?? '#e74c3c'
+}
+
+function boundsOverlap(
+  a: Array<{ x: number; y: number }>,
+  b: Array<{ x: number; y: number }>,
+): boolean {
+  let minAx = Number.POSITIVE_INFINITY
+  let minAy = Number.POSITIVE_INFINITY
+  let maxAx = Number.NEGATIVE_INFINITY
+  let maxAy = Number.NEGATIVE_INFINITY
+  for (const p of a) {
+    minAx = Math.min(minAx, p.x)
+    minAy = Math.min(minAy, p.y)
+    maxAx = Math.max(maxAx, p.x)
+    maxAy = Math.max(maxAy, p.y)
+  }
+  for (const p of b) {
+    if (p.x < minAx || p.x > maxAx || p.y < minAy || p.y > maxAy) continue
+    return true
+  }
+  return false
+}
 
 function crossValue(ax: number, ay: number, bx: number, by: number, px: number, py: number): number {
   return (bx - ax) * (py - ay) - (by - ay) * (px - ax)
@@ -234,6 +254,7 @@ export class BoardCanvas {
         drag.lastCellX = cellX
         drag.lastCellY = cellY
         this.callbacks.onComponentMove(drag.component, cellX, cellY)
+        this.revalidateWireColors(drag.component)
       }
     }
   }
@@ -576,7 +597,7 @@ export class BoardCanvas {
       const cps = component.getControlPoints()
       const a = anchors.a
       const b = anchors.b
-      const color = component.visualColor ?? (WIRE_COLORS[component.getMaterialId()] ?? '#b87333')
+      const color = component.getVisualColor()
       ctx.strokeStyle = color
       ctx.lineWidth = 3
       if (component.current !== 0) {
@@ -759,8 +780,8 @@ export class BoardCanvas {
     ctx.textAlign = 'left'
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? ''
-      if (i === 0 && component instanceof WireComponent && component.visualColor !== null) {
-        ctx.fillStyle = component.visualColor
+      if (i === 0 && component instanceof WireComponent) {
+        ctx.fillStyle = component.getVisualColor()
       } else {
         ctx.fillStyle = i === 0 ? '#4fc3f7' : '#cfd8dc'
       }
@@ -804,8 +825,8 @@ export class BoardCanvas {
         ctx.fill()
       }
       const textX = px + 10 + (i === this.hoverPickIndex ? 10 : 0)
-      if (candidate instanceof WireComponent && candidate.visualColor !== null) {
-        ctx.fillStyle = candidate.visualColor
+      if (candidate instanceof WireComponent) {
+        ctx.fillStyle = candidate.getVisualColor()
       } else {
         ctx.fillStyle = i === this.hoverPickIndex ? '#4fc3f7' : '#cfd8dc'
       }
@@ -1071,17 +1092,75 @@ export class BoardCanvas {
   }
 
   private segmentHitsWire(a: { x: number; y: number }, b: { x: number; y: number }, wire: WireComponent): boolean {
+    const points = this.bezierPoints(wire)
+    let prev = points[0]
+    if (prev === undefined) return false
+    for (let i = 1; i < points.length; i++) {
+      const cur = points[i]
+      if (cur === undefined) break
+      if (segmentsIntersect(a, b, prev, cur)) return true
+      prev = cur
+    }
+    return false
+  }
+
+  private bezierPoints(wire: WireComponent): Array<{ x: number; y: number }> {
     const anchors = wire.getAnchors()
     const cps = wire.getControlPoints()
     const steps = 24
-    let prev = anchors.a
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps
-      const point = this.cubicBezierPoint(anchors.a, cps.a, cps.b, anchors.b, t)
-      if (segmentsIntersect(a, b, prev, point)) return true
-      prev = point
+    const points: Array<{ x: number; y: number }> = []
+    for (let i = 0; i <= steps; i++) {
+      points.push(this.cubicBezierPoint(anchors.a, cps.a, cps.b, anchors.b, i / steps))
+    }
+    return points
+  }
+
+  private curvesIntersect(a: WireComponent, b: WireComponent): boolean {
+    const pointsA = this.bezierPoints(a)
+    const pointsB = this.bezierPoints(b)
+    if (!boundsOverlap(pointsA, pointsB)) return false
+    for (let i = 1; i < pointsA.length; i++) {
+      const prevA = pointsA[i - 1]
+      const curA = pointsA[i]
+      if (prevA === undefined || curA === undefined) break
+      for (let j = 1; j < pointsB.length; j++) {
+        const prevB = pointsB[j - 1]
+        const curB = pointsB[j]
+        if (prevB === undefined || curB === undefined) break
+        if (segmentsIntersect(prevA, curA, prevB, curB)) return true
+      }
     }
     return false
+  }
+
+  private wireTouchesComponent(wire: WireComponent, component: BaseComponent): boolean {
+    const anchors = wire.getAnchors()
+    const left = component.x * CELL_SIZE
+    const top = component.y * CELL_SIZE
+    const right = left + component.width * CELL_SIZE
+    const bottom = top + component.height * CELL_SIZE
+    for (const anchor of [anchors.a, anchors.b]) {
+      const dx = Math.max(left - anchor.x, 0, anchor.x - right)
+      const dy = Math.max(top - anchor.y, 0, anchor.y - bottom)
+      if (Math.hypot(dx, dy) <= CELL_SIZE * 0.75) return true
+    }
+    return false
+  }
+
+  private revalidateWireColors(moved: BaseComponent): void {
+    const components = this.callbacks.getComponents()
+    for (const wire of components) {
+      if (!(wire instanceof WireComponent)) continue
+      if (!this.wireTouchesComponent(wire, moved)) continue
+      for (const other of components) {
+        if (!(other instanceof WireComponent) || other === wire) continue
+        if (!this.curvesIntersect(wire, other)) continue
+        if (wire.getVisualColor() === other.getVisualColor()) {
+          wire.setVisualColor(randomWireColor(wire.getVisualColor()))
+          break
+        }
+      }
+    }
   }
 
   private drawDragGhost(): void {

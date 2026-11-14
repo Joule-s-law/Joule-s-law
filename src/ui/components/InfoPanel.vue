@@ -33,6 +33,24 @@
             {{ materialName(materialId) }}
           </button>
         </div>
+        <div class="row"><span>颜色</span></div>
+        <div class="material-btns">
+          <button
+            v-for="color in WIRE_PICK_COLORS"
+            :key="color"
+            class="color-swatch"
+            :class="{ active: color === info.wireVisualColor }"
+            :style="{ background: color }"
+            @click="game.setWireColor(color)"
+          ></button>
+          <button
+            class="color-swatch default-swatch"
+            :class="{ active: !WIRE_PICK_COLORS.includes(info.wireVisualColor) }"
+            @click="game.setWireColor(null)"
+          >
+            默认
+          </button>
+        </div>
       </div>
 
       <div v-if="info.isSwitch" class="extra">
@@ -85,6 +103,8 @@ import { useSettingsStore, formatWithPrefix, formatAngularValue } from '../setti
 const game = useGameStore()
 const s = useSettingsStore()
 const info = computed(() => game.selectedInfo)
+
+const WIRE_PICK_COLORS = ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c', '#3498db', '#9b59b6', '#e84393']
 const fourthGenNameDraft = ref('')
 watch(
   () => info.value?.fourthGenUuid,
@@ -206,6 +226,22 @@ function materialName(id: string): string {
 .material-btns button.active {
   border-color: #ffd54f;
   color: #ffd54f;
+}
+.color-swatch {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid #3a4658;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.color-swatch.active {
+  border-color: #ffffff;
+}
+.default-swatch {
+  background: #1b2230;
+  color: #cfd8dc;
+  font-size: 11px;
 }
 .name-input {
   width: 140px;
