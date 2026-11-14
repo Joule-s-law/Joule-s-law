@@ -139,6 +139,8 @@ export const useGameStore = defineStore('game', () => {
   const loadResult = saver.load()
   if (loadResult !== null) {
     offlineGained.value = loadResult.offlineGained
+  } else {
+    sim.economy.money = 20
   }
 
   const loop = new TickLoop(sim, 100)
