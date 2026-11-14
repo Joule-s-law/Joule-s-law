@@ -13,6 +13,7 @@ import { SwitchComponent } from '../../core/components/behaviors/SwitchComponent
 import { BatteryComponent } from '../../core/components/behaviors/BatteryComponent'
 import { FourthGeneratorComponent } from '../../core/components/behaviors/FourthGeneratorComponent'
 import { VoltageTransformerComponent } from '../../core/components/behaviors/VoltageTransformerComponent'
+import { ChainDriveComponent, gearCenter } from '../../core/components/behaviors/ChainDriveComponent'
 import { FourthWallClient } from '../../net/FourthWallClient'
 import { useSettingsStore } from '../settings/useSettingsStore'
 import { WIRE } from '../../core/components/registry/definitions'
@@ -84,6 +85,19 @@ export const useGameStore = defineStore('game', () => {
   const unlockedComponentsVersion = ref(0)
   const saveMarker = ref(0)
   const techTreeOpen = ref(false)
+  const chainPlacing = ref(false)
+  const chainFirstGear = shallowRef<BaseComponent | null>(null)
+  const toast = ref<string | null>(null)
+  let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+  function showToast(message: string): void {
+    toast.value = message
+    if (toastTimer !== null) clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => {
+      toast.value = null
+      toastTimer = null
+    }, 2500)
+  }
   const selectedTechId = ref<string | null>(null)
   const techVersion = ref(0)
   const clickProgress = ref(1)
@@ -303,14 +317,154 @@ export const useGameStore = defineStore('game', () => {
   }
 
   function selectComponent(component: BaseComponent | null): void {
+    if (chainPlacing.value && component !== null) {
+      handleChainPlacementClick(component)
+      return
+    }
     selectedComponent.value = component
     wirePendingPort.value = null
     selectedInfo.value = component !== null ? buildInfo(component) : null
   }
 
+  function isGearComponent(component: BaseComponent): boolean {
+    return component.def.behaviorId === 'gear'
+  }
+
+  function chainSegmentIntersectsAny(a: BaseComponent, b: BaseComponent): boolean {
+    const pa = gearCenter(a)
+    const pb = gearCenter(b)
+    for (const chain of sim.components) {
+      if (!(chain instanceof ChainDriveComponent)) continue
+      if (segmentsIntersect2(pa, pb, chain.getEndpointA(), chain.getEndpointB())) return true
+    }
+    return false
+  }
+
+  function handleChainPlacementClick(component: BaseComponent): void {
+    if (!isGearComponent(component)) {
+      showToast('链式传动杆只能装在齿轮上')
+      return
+    }
+    const first = chainFirstGear.value
+    if (first === null) {
+      if (sim.chainByGear.has(component)) {
+        showToast('这个齿轮上已经有链条了')
+        return
+      }
+      chainFirstGear.value = component
+      return
+    }
+    if (component === first) {
+      cancelChainPlacement()
+      return
+    }
+    if (sim.chainByGear.has(component)) {
+      showToast('这个齿轮上已经有链条了')
+      return
+    }
+    const def = COMPONENT_DEFS.get('chain_drive')
+    if (def === undefined) return
+    const price = sim.getComponentPrice(def)
+    if (sim.economy.money < price) {
+      showToast('资金不足')
+      return
+    }
+    if (chainSegmentIntersectsAny(first, component)) {
+      showToast('链条不能与其他链条交叉')
+      return
+    }
+    sim.economy.money -= price
+    sim.registerPurchase(def)
+    sim.addComponent(new ChainDriveComponent(def, first, component))
+    chainPlacing.value = false
+    chainFirstGear.value = null
+    refreshSnapshot()
+  }
+
+  function cancelChainPlacement(): void {
+    chainPlacing.value = false
+    chainFirstGear.value = null
+  }
+
+  function startChainPlacement(): void {
+    if (!techTree.isComponentUnlocked('chain_drive')) return
+    const def = COMPONENT_DEFS.get('chain_drive')
+    if (def === undefined) return
+    if (sim.economy.money < sim.getComponentPrice(def)) return
+    chainPlacing.value = true
+    chainFirstGear.value = null
+    selectComponentForChain()
+  }
+
+  function selectComponentForChain(): void {
+    selectedComponent.value = null
+    selectedInfo.value = null
+  }
+
+  function segmentsIntersect2(
+    p1: { x: number; y: number },
+    p2: { x: number; y: number },
+    p3: { x: number; y: number },
+    p4: { x: number; y: number },
+  ): boolean {
+    const d1 = (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x)
+    const d2 = (p2.x - p1.x) * (p4.y - p1.y) - (p2.y - p1.y) * (p4.x - p1.x)
+    const d3 = (p4.x - p3.x) * (p1.y - p3.y) - (p4.y - p3.y) * (p1.x - p3.x)
+    const d4 = (p4.x - p3.x) * (p2.y - p3.y) - (p4.y - p3.y) * (p2.x - p3.x)
+    return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+  }
+
+  function isAreaFree(cellX: number, cellY: number, width: number, height: number, ignore: BaseComponent | null): boolean {
+    if (cellX < 0 || cellY < 0 || cellX + width > GRID_COLS || cellY + height > GRID_ROWS) return false
+    for (const other of sim.components) {
+      if (other === ignore) continue
+      if (other.x < cellX + width && other.x + other.width > cellX && other.y < cellY + height && other.y + other.height > cellY) {
+        return false
+      }
+    }
+    return true
+  }
+
+  function findNearestFreeCell(
+    cellX: number,
+    cellY: number,
+    width: number,
+    height: number,
+    ignore: BaseComponent | null,
+  ): { x: number; y: number } | null {
+    if (isAreaFree(cellX, cellY, width, height, ignore)) return { x: cellX, y: cellY }
+    const visited = new Set<string>([`${cellX},${cellY}`])
+    const queue: Array<{ x: number; y: number }> = [{ x: cellX, y: cellY }]
+    while (queue.length > 0) {
+      const cell = queue.shift()
+      if (cell === undefined) break
+      const neighbors: Array<[number, number]> = [
+        [cell.x + 1, cell.y],
+        [cell.x - 1, cell.y],
+        [cell.x, cell.y + 1],
+        [cell.x, cell.y - 1],
+      ]
+      for (const [nx, ny] of neighbors) {
+        const key = `${nx},${ny}`
+        if (visited.has(key)) continue
+        visited.add(key)
+        if (nx < 0 || ny < 0 || nx >= GRID_COLS || ny >= GRID_ROWS) continue
+        if (isAreaFree(nx, ny, width, height, ignore)) return { x: nx, y: ny }
+        queue.push({ x: nx, y: ny })
+      }
+    }
+    return null
+  }
+
   function tryPlaceAt(defId: string, cellX: number, cellY: number): void {
     const def = COMPONENT_DEFS.get(defId)
     if (def === undefined || !techTree.isComponentUnlocked(defId)) return
+    if (!isAreaFree(cellX, cellY, def.width ?? 1, def.height ?? 1, null)) {
+      const free = findNearestFreeCell(cellX, cellY, def.width ?? 1, def.height ?? 1, null)
+      if (free === null) return
+      cellX = free.x
+      cellY = free.y
+    }
     const price = sim.getComponentPrice(def)
     if (sim.economy.money < price) return
     sim.economy.money -= price
@@ -330,6 +484,10 @@ export const useGameStore = defineStore('game', () => {
   }
 
   function startShopDrag(defId: string): void {
+    if (defId === 'chain_drive') {
+      startChainPlacement()
+      return
+    }
     const def = COMPONENT_DEFS.get(defId)
     if (def === undefined || !techTree.isComponentUnlocked(defId)) return
     if (sim.economy.money < sim.getComponentPrice(def)) return
@@ -361,10 +519,7 @@ export const useGameStore = defineStore('game', () => {
     tryPlaceAt(drag.defId, drag.cellX, drag.cellY)
   }
 
-  function moveComponent(component: BaseComponent, cellX: number, cellY: number): void {
-    if (component.x === cellX && component.y === cellY) return
-    const dx = (cellX - component.x) * CELL_SIZE
-    const dy = (cellY - component.y) * CELL_SIZE
+  function translateLinkedAnchors(component: BaseComponent, dx: number, dy: number): void {
     for (const port of component.ports) {
       const linked = sim.graph.getLinkedPorts(port)
       for (const other of linked) {
@@ -377,8 +532,44 @@ export const useGameStore = defineStore('game', () => {
         }
       }
     }
+  }
+
+  function chainsIntersectAround(component: BaseComponent): boolean {
+    for (const chain of sim.components) {
+      if (!(chain instanceof ChainDriveComponent)) continue
+      if (!chain.connectsGear(component)) continue
+      for (const other of sim.components) {
+        if (!(other instanceof ChainDriveComponent) || other === chain) continue
+        if (segmentsIntersect2(chain.getEndpointA(), chain.getEndpointB(), other.getEndpointA(), other.getEndpointB())) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  function moveComponent(component: BaseComponent, cellX: number, cellY: number): void {
+    if (component.x === cellX && component.y === cellY) return
+    if (!isAreaFree(cellX, cellY, component.width, component.height, component)) {
+      const free = findNearestFreeCell(cellX, cellY, component.width, component.height, component)
+      if (free === null) return
+      cellX = free.x
+      cellY = free.y
+      if (component.x === cellX && component.y === cellY) return
+    }
+    const prevX = component.x
+    const prevY = component.y
+    const dx = (cellX - component.x) * CELL_SIZE
+    const dy = (cellY - component.y) * CELL_SIZE
+    translateLinkedAnchors(component, dx, dy)
     component.x = cellX
     component.y = cellY
+    if (chainsIntersectAround(component)) {
+      translateLinkedAnchors(component, -dx, -dy)
+      component.x = prevX
+      component.y = prevY
+      showToast('移动被拒绝：链条会交叉')
+    }
     sim.resyncAdjacencyFor(component)
     refreshSnapshot()
   }
@@ -434,9 +625,14 @@ export const useGameStore = defineStore('game', () => {
       sim.economy.money += wire.def.price * SELL_REFUND_RATIO
       sim.unregisterPurchase(wire.def)
     }
+    const chain = sim.chainByGear.get(component)
     sim.removeComponent(component)
     sim.economy.money += component.def.price * SELL_REFUND_RATIO
     sim.unregisterPurchase(component.def)
+    if (chain !== undefined) {
+      sim.economy.money += chain.def.price * SELL_REFUND_RATIO
+      sim.unregisterPurchase(chain.def)
+    }
     if (selectedComponent.value === component || (selectedComponent.value !== null && wires.has(selectedComponent.value as WireComponent))) {
       selectedComponent.value = null
       selectedInfo.value = null
@@ -526,6 +722,10 @@ export const useGameStore = defineStore('game', () => {
     setTechNodePosition,
     setTechView,
     canvasBlankClick,
+    cancelChainPlacement,
+    chainPlacing,
+    chainFirstGear,
+    toast,
     getClickProgress,
     registerBoardRect,
     startShopDrag,

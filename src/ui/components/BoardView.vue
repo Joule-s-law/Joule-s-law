@@ -7,6 +7,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useGameStore } from '../stores/useGameStore'
+import { gearCenter } from '../../core/components/behaviors/ChainDriveComponent'
 import { BoardCanvas } from '../board/BoardCanvas'
 import type { BaseComponent } from '../../core/components/BaseComponent'
 
@@ -22,6 +23,8 @@ onMounted(() => {
     getComponents: (): BaseComponent[] => game.sim.components,
     getDragGhost: (): { cellX: number; cellY: number } | null => game.dragPlace,
     getWirePending: (): { owner: BaseComponent; portIndex: number; color: string | null } | null => game.wirePendingPort,
+    getChainPlacement: (): { first: { x: number; y: number } | null } | null =>
+      game.chainPlacing ? { first: game.chainFirstGear ? gearCenter(game.chainFirstGear) : null } : null,
     getSelected: (): BaseComponent | null => game.selectedComponent,
     getClickProgress: (): number => game.getClickProgress(),
     drainEnergyEvents: () => game.sim.drainEnergyEvents(),
@@ -33,6 +36,7 @@ onMounted(() => {
     onBlankClick: (x: number, y: number): void => game.canvasBlankClick(x, y),
     onEscape: (): void => {
       game.cancelWirePending()
+      game.cancelChainPlacement()
       game.selectComponent(null)
     },
   })

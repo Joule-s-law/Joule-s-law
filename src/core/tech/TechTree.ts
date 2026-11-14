@@ -33,7 +33,7 @@ export interface TechNode {
   effects: TechEffect[]
 }
 
-export const BASE_UNLOCKED_COMPONENTS: string[] = ['hand_crank', 'resistor', 'wire', 'fuse', 'switch', 'diode', 'gear_group', 'big_gear']
+export const BASE_UNLOCKED_COMPONENTS: string[] = ['hand_crank', 'resistor', 'wire', 'fuse', 'switch', 'diode', 'gear_group', 'big_gear', 'chain_drive']
 const BASE_WIRE_MATERIALS: string[] = ['copper']
 const ROOT_INITIAL_LEVEL = 1
 

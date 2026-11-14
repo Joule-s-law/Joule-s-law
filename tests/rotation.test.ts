@@ -5,7 +5,8 @@ import { GearComponent } from '../src/core/components/behaviors/GearComponent'
 import { VoltageSourceComponent } from '../src/core/components/behaviors/VoltageSourceComponent'
 import { ResistiveComponent } from '../src/core/components/behaviors/ResistiveComponent'
 import type { ComponentDefinition } from '../src/core/components/ComponentDefinition'
-import { GEAR_GROUP, BIG_GEAR } from '../src/core/components/registry/definitions'
+import { GEAR_GROUP, BIG_GEAR, CHAIN_DRIVE } from '../src/core/components/registry/definitions'
+import { ChainDriveComponent } from '../src/core/components/behaviors/ChainDriveComponent'
 import { TechTree } from '../src/core/tech/TechTree'
 
 const TWO_PI = Math.PI * 2
@@ -27,6 +28,12 @@ function addGear(sim: Simulation, def: ComponentDefinition, x: number, y: number
   gear.y = y
   sim.addComponent(gear)
   return gear
+}
+
+function addChain(sim: Simulation, gearA: GearComponent, gearB: GearComponent): ChainDriveComponent {
+  const chain = new ChainDriveComponent(CHAIN_DRIVE, gearA, gearB)
+  sim.addComponent(chain)
+  return chain
 }
 
 describe('RotationSystem', () => {
@@ -56,6 +63,40 @@ describe('RotationSystem', () => {
     sim.tick()
     expect(big.rotationSpeed).toBeCloseTo(-Math.PI, 6)
     expect(small.rotationSpeed).toBeCloseTo(TWO_PI, 6)
+  })
+
+  it('chain drive synchronizes two distant gears with same speed and direction', () => {
+    const { sim, crank } = buildCrankAt(0, 0)
+    const a = addGear(sim, GEAR_GROUP, 1, 0)
+    const b = addGear(sim, GEAR_GROUP, 5, 3)
+    addChain(sim, a, b)
+    crank.rotationSpeed = TWO_PI
+    crank.rotationDrive = 1
+    sim.tick()
+    expect(a.rotationSpeed).toBeCloseTo(-TWO_PI, 6)
+    expect(b.rotationSpeed).toBeCloseTo(a.rotationSpeed, 6)
+  })
+
+  it('chain drive and meshing between the same pair of gears lock the system', () => {
+    const { sim, crank } = buildCrankAt(0, 0)
+    const a = addGear(sim, GEAR_GROUP, 1, 0)
+    const b = addGear(sim, GEAR_GROUP, 2, 0)
+    addChain(sim, a, b)
+    crank.rotationSpeed = TWO_PI
+    crank.rotationDrive = 1
+    sim.tick()
+    expect(sim.rotation.lockedComponents.has(a)).toBe(true)
+    expect(sim.rotation.lockedComponents.has(b)).toBe(true)
+  })
+
+  it('removing a gear also removes its chain from the simulation', () => {
+    const { sim } = buildCrankAt(0, 0)
+    const a = addGear(sim, GEAR_GROUP, 1, 0)
+    const b = addGear(sim, GEAR_GROUP, 5, 3)
+    const chain = addChain(sim, a, b)
+    sim.removeComponent(a)
+    expect(sim.components.includes(chain)).toBe(false)
+    expect(sim.chainByGear.has(b)).toBe(false)
   })
 
   it('three-member ring through big gear locks the whole system', () => {

@@ -6,6 +6,7 @@ import type { ComponentDefinition } from '../components/ComponentDefinition'
 import type { BaseComponent } from '../components/BaseComponent'
 import { FieldSensorComponent } from '../components/behaviors/FieldSensorComponent'
 import { WireComponent } from '../components/behaviors/WireComponent'
+import { ChainDriveComponent } from '../components/behaviors/ChainDriveComponent'
 import { DiodeComponent } from '../components/behaviors/DiodeComponent'
 import { FieldGrid } from '../fields/FieldGrid'
 import { Economy } from '../economy/Economy'
@@ -30,6 +31,7 @@ export class Simulation {
   readonly graph = new CircuitGraph()
   readonly fieldGrid = new FieldGrid(24, 14)
   readonly components: BaseComponent[] = []
+  readonly chainByGear = new Map<BaseComponent, ChainDriveComponent>()
   readonly purchaseCounts = new Map<string, number>()
   private readonly adjacencyPairs: Array<[Port, Port]> = []
   private readonly energyEvents: EnergyEvent[] = []
@@ -56,6 +58,10 @@ export class Simulation {
     if (component instanceof FieldSensorComponent) {
       component.bindFieldGrid(this.fieldGrid)
     }
+    if (component instanceof ChainDriveComponent) {
+      this.chainByGear.set(component.gearA, component)
+      this.chainByGear.set(component.gearB, component)
+    }
     this.resyncAdjacencyFor(component)
   }
 
@@ -65,6 +71,20 @@ export class Simulation {
     this.components.splice(index, 1)
     this.graph.removeAllLinks(component)
     this.removeAdjacencyFor(component)
+    if (component instanceof ChainDriveComponent) {
+      if (this.chainByGear.get(component.gearA) === component) this.chainByGear.delete(component.gearA)
+      if (this.chainByGear.get(component.gearB) === component) this.chainByGear.delete(component.gearB)
+    }
+    const chain = this.chainByGear.get(component)
+    if (chain !== undefined) {
+      this.chainByGear.delete(component)
+      const chainIndex = this.components.indexOf(chain)
+      if (chainIndex >= 0) {
+        this.components.splice(chainIndex, 1)
+        if (this.chainByGear.get(chain.gearA) === chain) this.chainByGear.delete(chain.gearA)
+        if (this.chainByGear.get(chain.gearB) === chain) this.chainByGear.delete(chain.gearB)
+      }
+    }
   }
 
   resyncAdjacencyFor(component: BaseComponent): void {
@@ -107,11 +127,15 @@ export class Simulation {
         }
       }
     }
+    const chain = this.chainByGear.get(component)
     this.removeComponent(component)
     this.economy.money += component.def.price * DESTROY_REFUND_RATIO
     for (const wire of wires) {
       this.removeComponent(wire)
       this.economy.money += wire.def.price * DESTROY_REFUND_RATIO
+    }
+    if (chain !== undefined) {
+      this.economy.money += chain.def.price * DESTROY_REFUND_RATIO
     }
   }
 

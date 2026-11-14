@@ -15,6 +15,7 @@
         <SettingsPanel />
       </aside>
     </main>
+    <div class="toast" v-if="game.toast">{{ game.toast }}</div>
     <TechTreeView v-if="game.techTreeOpen" />
   </div>
 </template>
@@ -36,6 +37,19 @@ const game = useGameStore()
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+.toast {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(231, 76, 60, 0.92);
+  color: #fff;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  z-index: 60;
+  pointer-events: none;
 }
 body {
   background: #0e1219;

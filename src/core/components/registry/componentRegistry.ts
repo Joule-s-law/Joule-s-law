@@ -70,6 +70,8 @@ export function createComponent(def: ComponentDefinition, options?: ComponentCre
         uuid: options?.fourthGenUuid,
         customName: options?.fourthGenName,
       })
+    case 'chainDrive':
+      throw new Error('chain drive must be created with explicit gears via ChainDriveComponent constructor')
   }
 }
 

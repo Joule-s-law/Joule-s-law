@@ -1,7 +1,14 @@
 import type { BaseComponent } from '../components/BaseComponent'
 import { paramTag } from '../components/ComponentDefinition'
+import { ChainDriveComponent } from '../components/behaviors/ChainDriveComponent'
 
 const FRICTION_ALPHA = Math.PI
+
+interface RotationEdge {
+  to: BaseComponent
+  sign: number
+  ratio: number
+}
 
 interface BlockMember {
   component: BaseComponent
@@ -11,13 +18,13 @@ interface BlockMember {
 
 export class RotationSystem {
   readonly lockedComponents = new Set<BaseComponent>()
-  private readonly adjacency = new Map<BaseComponent, BaseComponent[]>()
+  private readonly adjacency = new Map<BaseComponent, RotationEdge[]>()
 
   update(dt: number, components: BaseComponent[]): void {
     this.lockedComponents.clear()
     this.adjacency.clear()
     const rotatables = components.filter((component) => paramTag(component.def, 'rotatable', '') === '1')
-    this.buildAdjacency(rotatables)
+    this.buildAdjacency(rotatables, components)
     const visited = new Set<BaseComponent>()
     for (const component of rotatables) {
       if (visited.has(component)) continue
@@ -50,10 +57,11 @@ export class RotationSystem {
     while (queue.length > 0) {
       const member = queue.shift()
       if (member === undefined) break
-      const neighbors = this.adjacency.get(member.component) ?? []
-      for (const neighbor of neighbors) {
-        const ratio = member.ratio * (member.component.teeth / neighbor.teeth)
-        const sign = -member.sign
+      const edges = this.adjacency.get(member.component) ?? []
+      for (const edge of edges) {
+        const neighbor = edge.to
+        const ratio = member.ratio * edge.ratio
+        const sign = member.sign * edge.sign
         const existing = byComponent.get(neighbor)
         if (existing !== undefined) {
           if (existing.sign !== sign || Math.abs(existing.ratio - ratio) > 1e-9) {
@@ -105,13 +113,22 @@ export class RotationSystem {
     }
   }
 
-  private buildAdjacency(rotatables: BaseComponent[]): void {
+  private buildAdjacency(rotatables: BaseComponent[], allComponents: BaseComponent[]): void {
     for (const a of rotatables) {
-      const neighbors: BaseComponent[] = []
+      const edges: RotationEdge[] = []
       for (const b of rotatables) {
-        if (a !== b && this.rectsAdjacent(a, b)) neighbors.push(b)
+        if (a !== b && this.rectsAdjacent(a, b)) {
+          edges.push({ to: b, sign: -1, ratio: a.teeth / b.teeth })
+        }
       }
-      this.adjacency.set(a, neighbors)
+      this.adjacency.set(a, edges)
+    }
+    for (const component of allComponents) {
+      if (!(component instanceof ChainDriveComponent)) continue
+      const a = this.adjacency.get(component.gearA)
+      const b = this.adjacency.get(component.gearB)
+      a?.push({ to: component.gearB, sign: 1, ratio: 1 })
+      b?.push({ to: component.gearA, sign: 1, ratio: 1 })
     }
   }
 

@@ -1,5 +1,6 @@
 import type { BaseComponent } from '../../core/components/BaseComponent'
 import { WireComponent } from '../../core/components/behaviors/WireComponent'
+import { ChainDriveComponent } from '../../core/components/behaviors/ChainDriveComponent'
 import { RheostatComponent } from '../../core/components/behaviors/RheostatComponent'
 import { FourthGeneratorComponent } from '../../core/components/behaviors/FourthGeneratorComponent'
 import { VoltageTransformerComponent } from '../../core/components/behaviors/VoltageTransformerComponent'
@@ -14,6 +15,7 @@ export interface BoardCallbacks {
   getComponents(): BaseComponent[]
   getDragGhost(): { cellX: number; cellY: number } | null
   getWirePending(): { owner: BaseComponent; portIndex: number; color: string | null } | null
+  getChainPlacement(): { first: { x: number; y: number } | null } | null
   getSelected(): BaseComponent | null
   getClickProgress(): number
   drainEnergyEvents(): EnergyEvent[]
@@ -86,6 +88,15 @@ function boundsOverlap(
 
 function crossValue(ax: number, ay: number, bx: number, by: number, px: number, py: number): number {
   return (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+}
+
+function pointSegmentDistance(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax
+  const dy = by - ay
+  const lengthSq = dx * dx + dy * dy
+  if (lengthSq <= 1e-9) return Math.hypot(px - ax, py - ay)
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSq))
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 }
 
 function segmentsIntersect(
@@ -192,6 +203,9 @@ export class BoardCanvas {
     }
     for (const wire of this.collectWireHits(this.callbacks.getComponents())) {
       if (!candidates.includes(wire)) candidates.push(wire)
+    }
+    for (const chain of this.collectChainHits(this.callbacks.getComponents())) {
+      if (!candidates.includes(chain)) candidates.push(chain)
     }
     const previous = this.hoverCandidates
     const sameSet = previous.length === candidates.length && previous.every((item, index) => item === candidates[index])
@@ -322,7 +336,7 @@ export class BoardCanvas {
         return
       }
       this.callbacks.onComponentClick(picked)
-      if (!(picked instanceof WireComponent)) {
+      if (!(picked instanceof WireComponent) && !(picked instanceof ChainDriveComponent)) {
         if (picked.def.behaviorTags['holdable'] === '1') {
           this.heldCrank = picked
           picked.rotationDrive = -1
@@ -442,8 +456,10 @@ export class BoardCanvas {
     this.drawWires()
     this.drawComponents()
     this.drawPorts()
+    this.drawChains()
     this.drawWireHandles()
     this.drawPendingWire()
+    this.drawChainPreview()
     this.drawDragGhost()
     this.drawClickCooldownRing()
     this.updateFloats()
@@ -589,6 +605,62 @@ export class BoardCanvas {
     }
   }
 
+  private collectChainHits(components: BaseComponent[]): ChainDriveComponent[] {
+    const hits: ChainDriveComponent[] = []
+    for (const component of components) {
+      if (!(component instanceof ChainDriveComponent)) continue
+      const a = component.getEndpointA()
+      const b = component.getEndpointB()
+      if (pointSegmentDistance(this.mouseX, this.mouseY, a.x, a.y, b.x, b.y) <= 10) hits.push(component)
+    }
+    return hits
+  }
+
+  private drawChains(): void {
+    const locked = new Set(this.callbacks.getLockedComponents())
+    const ctx = this.ctx
+    for (const component of this.callbacks.getComponents()) {
+      if (!(component instanceof ChainDriveComponent)) continue
+      const a = component.getEndpointA()
+      const b = component.getEndpointB()
+      ctx.lineCap = 'round'
+      ctx.strokeStyle = locked.has(component) ? '#c0392b' : '#3a4148'
+      ctx.lineWidth = 10
+      ctx.beginPath()
+      ctx.moveTo(a.x, a.y)
+      ctx.lineTo(b.x, b.y)
+      ctx.stroke()
+      ctx.strokeStyle = '#10141b'
+      ctx.lineWidth = 4
+      ctx.beginPath()
+      ctx.moveTo(a.x, a.y)
+      ctx.lineTo(b.x, b.y)
+      ctx.stroke()
+      ctx.lineCap = 'butt'
+    }
+  }
+
+  private drawChainPreview(): void {
+    const placement = this.callbacks.getChainPlacement()
+    if (placement === null) return
+    const ctx = this.ctx
+    if (placement.first === null) return
+    const first = placement.first
+    ctx.strokeStyle = 'rgba(241, 196, 15, 0.9)'
+    ctx.lineWidth = 2
+    ctx.setLineDash([6, 6])
+    ctx.beginPath()
+    ctx.moveTo(first.x, first.y)
+    ctx.lineTo(this.mouseX, this.mouseY)
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.strokeStyle = '#f1c40f'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(first.x, first.y, 12, 0, Math.PI * 2)
+    ctx.stroke()
+  }
+
   private drawWires(): void {
     const ctx = this.ctx
     for (const component of this.callbacks.getComponents()) {
@@ -658,6 +730,7 @@ export class BoardCanvas {
     }
     for (const component of this.callbacks.getComponents()) {
       if (component instanceof WireComponent) continue
+      if (component instanceof ChainDriveComponent) continue
       const x = component.x * CELL_SIZE
       const y = component.y * CELL_SIZE
       const w = component.width * CELL_SIZE

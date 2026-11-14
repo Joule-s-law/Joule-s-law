@@ -18,6 +18,7 @@ import { COIL } from './coil'
 import { INDUCTION_COIL } from './induction_coil'
 import { GEAR_GROUP } from './gear_group'
 import { BIG_GEAR } from './big_gear'
+import { CHAIN_DRIVE } from './chain_drive'
 import { DIODE } from './diode'
 import { RHEOSTAT } from './rheostat'
 import { VOLTAGE_DOUBLER, VOLTAGE_HALVER } from './voltage_transformer'
@@ -44,6 +45,7 @@ export const ALL_DEFS: ComponentDefinition[] = [
   INDUCTION_COIL,
   GEAR_GROUP,
   BIG_GEAR,
+  CHAIN_DRIVE,
   RHEOSTAT,
   VOLTAGE_DOUBLER,
   VOLTAGE_HALVER,
@@ -71,6 +73,7 @@ const COMPONENT_LABELS: Record<string, string[]> = {
   induction_coil: ['电磁感应'],
   gear_group: ['机械传动'],
   big_gear: ['机械传动'],
+  chain_drive: ['机械传动'],
   rheostat: ['欧姆定律', '焦耳热'],
   voltage_doubler: ['电磁感应'],
   voltage_halver: ['电磁感应'],
@@ -102,6 +105,7 @@ export {
   INDUCTION_COIL,
   GEAR_GROUP,
   BIG_GEAR,
+  CHAIN_DRIVE,
   RHEOSTAT,
   VOLTAGE_DOUBLER,
   VOLTAGE_HALVER,
