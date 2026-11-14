@@ -18,6 +18,7 @@ export class WireComponent extends BaseComponent {
   private anchorB: WireAnchor
   private controlPointA: WireAnchor
   private controlPointB: WireAnchor
+  visualColor: string | null = null
 
   constructor(def: ComponentDefinition, options?: {
     materialId?: string

@@ -78,7 +78,7 @@ export const useGameStore = defineStore('game', () => {
   const clickHeat = ref(1)
   const selectedComponent = shallowRef<BaseComponent | null>(null)
   const selectedInfo = ref<ComponentInfo | null>(null)
-  const wirePendingPort = shallowRef<{ owner: BaseComponent; portIndex: number } | null>(null)
+  const wirePendingPort = shallowRef<{ owner: BaseComponent; portIndex: number; color: string | null } | null>(null)
   const offlineGained = ref(0)
   const unlockedComponentsVersion = ref(0)
   const saveMarker = ref(0)
@@ -384,7 +384,7 @@ export const useGameStore = defineStore('game', () => {
   function onPortClick(component: BaseComponent, portIndex: number): void {
     const pending = wirePendingPort.value
     if (pending === null) {
-      wirePendingPort.value = { owner: component, portIndex }
+      wirePendingPort.value = { owner: component, portIndex, color: null }
       return
     }
     if (pending.owner === component && pending.portIndex === portIndex) {
@@ -407,9 +407,11 @@ export const useGameStore = defineStore('game', () => {
       wireAnchorA: { x: anchorA.px, y: anchorA.py },
       wireAnchorB: { x: anchorB.px, y: anchorB.py },
     })
+    if (!(wire instanceof WireComponent)) return
     sim.addComponent(wire)
     sim.connect(portA, wire.getPort(0))
     sim.connect(wire.getPort(1), portB)
+    wire.visualColor = pending.color
     wirePendingPort.value = null
     refreshSnapshot()
   }

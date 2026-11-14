@@ -13,7 +13,7 @@ import { traceMagneticFieldLines } from './magneticFieldLines'
 export interface BoardCallbacks {
   getComponents(): BaseComponent[]
   getDragGhost(): { cellX: number; cellY: number } | null
-  getWirePending(): { owner: BaseComponent; portIndex: number } | null
+  getWirePending(): { owner: BaseComponent; portIndex: number; color: string | null } | null
   getSelected(): BaseComponent | null
   getClickProgress(): number
   drainEnergyEvents(): EnergyEvent[]
@@ -62,6 +62,25 @@ const FIELD_COLORS: Record<string, string> = {
   magnetic: '200, 140, 255',
 }
 
+const WIRE_PICK_COLORS = ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c', '#3498db', '#9b59b6', '#e84393']
+
+function crossValue(ax: number, ay: number, bx: number, by: number, px: number, py: number): number {
+  return (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+}
+
+function segmentsIntersect(
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  p3: { x: number; y: number },
+  p4: { x: number; y: number },
+): boolean {
+  const d1 = crossValue(p3.x, p3.y, p4.x, p4.y, p1.x, p1.y)
+  const d2 = crossValue(p3.x, p3.y, p4.x, p4.y, p2.x, p2.y)
+  const d3 = crossValue(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y)
+  const d4 = crossValue(p1.x, p1.y, p2.x, p2.y, p4.x, p4.y)
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+}
+
 export class BoardCanvas {
   private ctx: CanvasRenderingContext2D
   private readonly settings = useSettingsStore()
@@ -74,6 +93,8 @@ export class BoardCanvas {
   private sliderDrag: RheostatComponent | null = null
   private heldCrank: BaseComponent | null = null
   private hoverComponent: BaseComponent | null = null
+  private hoverCandidates: BaseComponent[] = []
+  private hoverPickIndex = 0
   private floats: FloatText[] = []
 
   constructor(
@@ -89,6 +110,7 @@ export class BoardCanvas {
     canvas.addEventListener('mouseleave', this.handleMouseLeave)
     canvas.addEventListener('mousedown', this.handleMouseDown)
     canvas.addEventListener('contextmenu', this.handleContextMenu)
+    canvas.addEventListener('wheel', this.handleWheel, { passive: false })
     window.addEventListener('mousemove', this.handleWindowMouseMove)
     window.addEventListener('mouseup', this.handleWindowMouseUp)
     window.addEventListener('keydown', this.handleKeyDown)
@@ -101,6 +123,7 @@ export class BoardCanvas {
     this.canvas.removeEventListener('mouseleave', this.handleMouseLeave)
     this.canvas.removeEventListener('mousedown', this.handleMouseDown)
     this.canvas.removeEventListener('contextmenu', this.handleContextMenu)
+    this.canvas.removeEventListener('wheel', this.handleWheel)
     window.removeEventListener('mousemove', this.handleWindowMouseMove)
     window.removeEventListener('mouseup', this.handleWindowMouseUp)
     window.removeEventListener('keydown', this.handleKeyDown)
@@ -132,6 +155,59 @@ export class BoardCanvas {
     this.mouseY = coords.y
     const hit = this.hitTest()
     this.hoverComponent = hit.kind === 'component' ? hit.component : null
+    this.updateHoverCandidates()
+  }
+
+  private updateHoverCandidates(): void {
+    const busy = this.dragComponent !== null || this.dragging !== null || this.sliderDrag !== null || this.heldCrank !== null
+    if (busy || this.mouseX < 0 || this.mouseY < 0) {
+      this.hoverCandidates = []
+      return
+    }
+    const candidates: BaseComponent[] = []
+    const cell = this.mouseCell()
+    if (cell.cellX >= 0 && cell.cellX < GRID_COLS && cell.cellY >= 0 && cell.cellY < GRID_ROWS) {
+      const component = componentAt(this.callbacks.getComponents(), cell.cellX, cell.cellY)
+      if (component !== null) candidates.push(component)
+    }
+    for (const wire of this.collectWireHits(this.callbacks.getComponents())) {
+      if (!candidates.includes(wire)) candidates.push(wire)
+    }
+    const previous = this.hoverCandidates
+    const sameSet = previous.length === candidates.length && previous.every((item, index) => item === candidates[index])
+    this.hoverCandidates = candidates
+    if (sameSet) {
+      if (this.hoverPickIndex >= candidates.length) this.hoverPickIndex = 0
+    } else {
+      this.hoverPickIndex = 0
+    }
+  }
+
+  private handleWheel = (event: WheelEvent): void => {
+    if (this.hoverCandidates.length < 2) return
+    event.preventDefault()
+    const count = this.hoverCandidates.length
+    const step = event.deltaY > 0 ? 1 : -1
+    this.hoverPickIndex = (this.hoverPickIndex + step + count) % count
+  }
+
+  private collectWireHits(components: BaseComponent[]): WireComponent[] {
+    const hits: WireComponent[] = []
+    for (const component of components) {
+      if (!(component instanceof WireComponent)) continue
+      const anchors = component.getAnchors()
+      const cps = component.getControlPoints()
+      const steps = 24
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps
+        const point = this.cubicBezierPoint(anchors.a, cps.a, cps.b, anchors.b, t)
+        if (Math.hypot(point.x - this.mouseX, point.y - this.mouseY) <= 8) {
+          hits.push(component)
+          break
+        }
+      }
+    }
+    return hits
   }
 
   private handleMouseLeave = (): void => {
@@ -190,6 +266,7 @@ export class BoardCanvas {
     const coords = this.toCanvasCoords(event)
     this.mouseX = coords.x
     this.mouseY = coords.y
+    this.updateHoverCandidates()
     const dragHit = this.wireControlPointHit()
     if (dragHit !== null) {
       this.dragging = dragHit
@@ -217,25 +294,28 @@ export class BoardCanvas {
       this.callbacks.onPortClick(hit.component, hit.portIndex)
       return
     }
-    if (hit.kind === 'component') {
-      this.callbacks.onComponentClick(hit.component)
-      if (hit.component.def.behaviorTags['holdable'] === '1') {
-        this.heldCrank = hit.component
-        hit.component.rotationDrive = -1
+    if (event.button === 0 && this.hoverCandidates.length > 0) {
+      const picked = this.hoverCandidates[this.hoverPickIndex] ?? this.hoverCandidates[0]
+      if (picked === undefined) {
+        this.callbacks.onBlankClick(this.mouseX / CELL_SIZE, this.mouseY / CELL_SIZE)
+        return
       }
-      const cellX = hit.component.x * CELL_SIZE
-      const cellY = hit.component.y * CELL_SIZE
-      this.dragComponent = {
-        component: hit.component,
-        grabDX: this.mouseX - cellX,
-        grabDY: this.mouseY - cellY,
-        lastCellX: hit.component.x,
-        lastCellY: hit.component.y,
+      this.callbacks.onComponentClick(picked)
+      if (!(picked instanceof WireComponent)) {
+        if (picked.def.behaviorTags['holdable'] === '1') {
+          this.heldCrank = picked
+          picked.rotationDrive = -1
+        }
+        const cellX = picked.x * CELL_SIZE
+        const cellY = picked.y * CELL_SIZE
+        this.dragComponent = {
+          component: picked,
+          grabDX: this.mouseX - cellX,
+          grabDY: this.mouseY - cellY,
+          lastCellX: picked.x,
+          lastCellY: picked.y,
+        }
       }
-      return
-    }
-    if (hit.kind === 'wire') {
-      this.callbacks.onComponentClick(hit.wire)
       return
     }
     this.callbacks.onBlankClick(this.mouseX / CELL_SIZE, this.mouseY / CELL_SIZE)
@@ -348,6 +428,7 @@ export class BoardCanvas {
     this.updateFloats()
     this.drawFloats()
     this.drawHoverTooltip()
+    this.drawIntersectionPanel()
   }
 
   private updateFloats(): void {
@@ -495,7 +576,7 @@ export class BoardCanvas {
       const cps = component.getControlPoints()
       const a = anchors.a
       const b = anchors.b
-      const color = WIRE_COLORS[component.getMaterialId()] ?? '#b87333'
+      const color = component.visualColor ?? (WIRE_COLORS[component.getMaterialId()] ?? '#b87333')
       ctx.strokeStyle = color
       ctx.lineWidth = 3
       if (component.current !== 0) {
@@ -624,6 +705,7 @@ export class BoardCanvas {
     const pinned = drag !== null || slider !== null
     const component = drag !== null ? drag.component : slider !== null ? slider : this.hoverComponent
     if (component === null) return
+    if (!pinned && this.hoverCandidates.length > 1) return
     if (!pinned && !component.occupies(Math.floor(this.mouseX / CELL_SIZE), Math.floor(this.mouseY / CELL_SIZE))) {
       this.hoverComponent = null
       return
@@ -677,9 +759,60 @@ export class BoardCanvas {
     ctx.textAlign = 'left'
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? ''
-      ctx.fillStyle = i === 0 ? '#4fc3f7' : '#cfd8dc'
+      if (i === 0 && component instanceof WireComponent && component.visualColor !== null) {
+        ctx.fillStyle = component.visualColor
+      } else {
+        ctx.fillStyle = i === 0 ? '#4fc3f7' : '#cfd8dc'
+      }
       ctx.fillText(line, px + 9, py + 17 + i * 16)
     }
+  }
+
+  private drawIntersectionPanel(): void {
+    if (this.hoverCandidates.length < 2) return
+    if (this.dragComponent !== null || this.dragging !== null || this.sliderDrag !== null) return
+    const ctx = this.ctx
+    ctx.font = '11px system-ui, sans-serif'
+    const rows = this.hoverCandidates.map((candidate) =>
+      candidate instanceof WireComponent ? '导线' : candidate.def.displayName,
+    )
+    let width = 0
+    for (const row of rows) width = Math.max(width, ctx.measureText(row).width)
+    width = Math.max(width, ctx.measureText('滚轮切换 · 点击选中').width)
+    const boxW = width + 26
+    const boxH = rows.length * 18 + 30
+    let px = this.mouseX + 16
+    let py = this.mouseY + 16
+    if (px + boxW > this.canvas.clientWidth) px = this.mouseX - boxW - 12
+    if (py + boxH > this.canvas.clientHeight) py = this.mouseY - boxH - 12
+    ctx.fillStyle = 'rgba(20, 26, 38, 0.94)'
+    ctx.strokeStyle = '#3a4a63'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.roundRect(px, py, boxW, boxH, 6)
+    ctx.fill()
+    ctx.stroke()
+    ctx.textAlign = 'left'
+    for (let i = 0; i < rows.length; i++) {
+      const candidate = this.hoverCandidates[i]
+      const row = rows[i] ?? ''
+      const rowY = py + 8 + i * 18
+      if (i === this.hoverPickIndex) {
+        ctx.fillStyle = 'rgba(79, 195, 247, 0.22)'
+        ctx.beginPath()
+        ctx.roundRect(px + 4, rowY, boxW - 8, 17, 4)
+        ctx.fill()
+      }
+      const textX = px + 10 + (i === this.hoverPickIndex ? 10 : 0)
+      if (candidate instanceof WireComponent && candidate.visualColor !== null) {
+        ctx.fillStyle = candidate.visualColor
+      } else {
+        ctx.fillStyle = i === this.hoverPickIndex ? '#4fc3f7' : '#cfd8dc'
+      }
+      ctx.fillText((i === this.hoverPickIndex ? '▶ ' : '') + row, textX, rowY + 13)
+    }
+    ctx.fillStyle = '#78909c'
+    ctx.fillText('滚轮切换 · 点击选中', px + 10, py + boxH - 9)
   }
 
   private formatResistanceDisplay(value: number): string {
@@ -915,6 +1048,18 @@ export class BoardCanvas {
     if (pending === null || this.mouseX < 0) return
     const ctx = this.ctx
     const start = portPosition(pending.owner, pending.portIndex)
+    const startXY = { x: start.px, y: start.py }
+    const end = { x: this.mouseX, y: this.mouseY }
+    for (const component of this.callbacks.getComponents()) {
+      if (!(component instanceof WireComponent)) continue
+      if (this.segmentHitsWire(startXY, end, component)) {
+        if (pending.color === null) {
+          const index = Math.floor(Math.random() * WIRE_PICK_COLORS.length)
+          pending.color = WIRE_PICK_COLORS[index] ?? '#e74c3c'
+        }
+        break
+      }
+    }
     ctx.strokeStyle = '#f1c40f'
     ctx.lineWidth = 2
     ctx.setLineDash([6, 6])
@@ -923,6 +1068,20 @@ export class BoardCanvas {
     ctx.lineTo(this.mouseX, this.mouseY)
     ctx.stroke()
     ctx.setLineDash([])
+  }
+
+  private segmentHitsWire(a: { x: number; y: number }, b: { x: number; y: number }, wire: WireComponent): boolean {
+    const anchors = wire.getAnchors()
+    const cps = wire.getControlPoints()
+    const steps = 24
+    let prev = anchors.a
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps
+      const point = this.cubicBezierPoint(anchors.a, cps.a, cps.b, anchors.b, t)
+      if (segmentsIntersect(a, b, prev, point)) return true
+      prev = point
+    }
+    return false
   }
 
   private drawDragGhost(): void {
