@@ -50,6 +50,37 @@ export const ALL_DEFS: ComponentDefinition[] = [
   FOURTH_GENERATOR,
 ]
 
+const COMPONENT_LABELS: Record<string, string[]> = {
+  hand_crank: ['电磁感应', '机械传动'],
+  resistor: ['焦耳热'],
+  wire: ['低电阻'],
+  fuse: ['焦耳热'],
+  switch: ['通断'],
+  diode: ['半导体'],
+  lamp: ['焦耳热', '热辐射'],
+  electrolysis_cell: ['电化学'],
+  buzzer: ['声波', '电磁感应'],
+  battery_pack: ['电化学'],
+  motor: ['磁场力', '机械传动'],
+  steam_engine: ['热机', '机械传动'],
+  turbine: ['动能冲击', '机械传动'],
+  secondary_battery: ['电化学', '可充电'],
+  photocell: ['光电效应'],
+  microphone: ['声波', '电磁感应'],
+  coil: ['电流磁效应'],
+  induction_coil: ['电磁感应'],
+  gear_group: ['机械传动'],
+  big_gear: ['机械传动'],
+  rheostat: ['欧姆定律', '焦耳热'],
+  voltage_doubler: ['电磁感应'],
+  voltage_halver: ['电磁感应'],
+  fourth_generator: ['打破第四面墙'],
+}
+
+for (const def of ALL_DEFS) {
+  def.labels = COMPONENT_LABELS[def.id] ?? []
+}
+
 export {
   HAND_CRANK,
   RESISTOR,

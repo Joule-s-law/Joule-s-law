@@ -10,7 +10,7 @@ export const BIG_GEAR: ComponentDefinition = {
   resistance: 0,
   ratedCurrent: 0,
   behaviorId: 'gear',
-  behaviorParams: { gearRatio: 2, maxOmega: Math.PI * 12 },
+  behaviorParams: { teeth: 16, maxOmega: Math.PI * 12 },
   behaviorTags: { rotatable: '1' },
   width: 2,
   height: 2,

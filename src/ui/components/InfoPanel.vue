@@ -2,12 +2,20 @@
   <section class="info">
     <h2>元件信息</h2>
     <template v-if="info !== null">
-      <div class="title">{{ info.displayName }}</div>
+      <div class="title-row">
+        <div class="title">{{ info.displayName }}</div>
+        <div v-if="info.labels.length" class="chips">
+          <span v-for="label in info.labels" :key="label" class="chip">{{ label }}</span>
+        </div>
+      </div>
       <p class="desc">{{ info.description }}</p>
-      <div class="row"><span>电流</span><span :class="{ danger: currentRatio > 1 }">{{ Math.abs(info.current).toFixed(3) }} A</span></div>
-      <div class="row"><span>电压</span><span>{{ info.voltage >= 0 ? '' : '-' }}{{ Math.abs(info.voltage).toFixed(3) }} V</span></div>
+      <div class="row"><span>电流</span><span :class="{ danger: currentRatio > 1 }">{{ formatCurrent(info.current) }}</span></div>
+      <div class="row"><span>电压</span><span>{{ info.voltage >= 0 ? '' : '-' }}{{ formatVoltage(info.voltage) }}</span></div>
       <div class="row"><span>当前电阻</span><span>{{ formatResistance(info.resistance) }}</span></div>
-      <div class="row"><span>额定电流</span><span>{{ info.ratedCurrent.toFixed(2) }} A</span></div>
+      <div class="row"><span>额定电流</span><span>{{ formatCurrent(info.ratedCurrent) }}</span></div>
+      <div v-if="info.rotatable" class="row"><span>转速</span><span>{{ formatAngularValue(info.rotationSpeed, s.angularUnit) }}</span></div>
+      <div v-if="info.isMagneticSensor" class="row"><span>磁感应强度</span><span>{{ formatWithPrefix(info.sensedFluxDensity * 1e-3, s.prefixFluxDensity, 'T') }}</span></div>
+      <div v-if="info.isMagneticSensor" class="row"><span>磁通量</span><span>{{ formatWithPrefix(info.sensedFlux * 1e-3, s.prefixFlux, 'Wb') }}</span></div>
       <div class="overload">
         <div class="bar" :style="{ width: (info.overloadRatio * 100).toFixed(0) + '%' }"></div>
       </div>
@@ -72,8 +80,10 @@
 import { computed, ref, watch } from 'vue'
 import { useGameStore } from '../stores/useGameStore'
 import { WIRE_MATERIALS } from '../../core/components/registry/wireMaterials'
+import { useSettingsStore, formatWithPrefix, formatAngularValue } from '../settings/useSettingsStore'
 
 const game = useGameStore()
+const s = useSettingsStore()
 const info = computed(() => game.selectedInfo)
 const fourthGenNameDraft = ref('')
 watch(
@@ -96,8 +106,15 @@ const batteryState = computed(() => {
 
 function formatResistance(resistance: number): string {
   if (resistance === Number.POSITIVE_INFINITY) return '∞（断开）'
-  if (resistance >= 1) return resistance.toFixed(2) + ' Ω'
-  return resistance.toExponential(2) + ' Ω'
+  return formatWithPrefix(resistance, s.prefixResistance, 'Ω')
+}
+
+function formatCurrent(value: number): string {
+  return formatWithPrefix(Math.abs(value), s.prefixCurrent, 'A')
+}
+
+function formatVoltage(value: number): string {
+  return formatWithPrefix(Math.abs(value), s.prefixVoltage, 'V')
 }
 
 function materialName(id: string): string {
@@ -115,6 +132,26 @@ function materialName(id: string): string {
   font-size: 15px;
   font-weight: 600;
   color: #4fc3f7;
+}
+.title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chip {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 8px;
+  background: rgba(179, 136, 255, 0.16);
+  border: 1px solid rgba(179, 136, 255, 0.45);
+  color: #ce93d8;
+  white-space: nowrap;
 }
 .desc {
   font-size: 12px;

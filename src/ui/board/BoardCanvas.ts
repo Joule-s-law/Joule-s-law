@@ -7,6 +7,7 @@ import { FieldSensorComponent } from '../../core/components/behaviors/FieldSenso
 import { EnergyType } from '../../core/energy/EnergyType'
 import type { EnergyEvent } from '../../core/sim/Simulation'
 import { CELL_SIZE, GRID_COLS, GRID_ROWS, componentAt, portPosition } from './boardMath'
+import { useSettingsStore, formatWithPrefix, formatAngularValue } from '../settings/useSettingsStore'
 import { traceMagneticFieldLines } from './magneticFieldLines'
 
 export interface BoardCallbacks {
@@ -63,6 +64,7 @@ const FIELD_COLORS: Record<string, string> = {
 
 export class BoardCanvas {
   private ctx: CanvasRenderingContext2D
+  private readonly settings = useSettingsStore()
   private animationHandle = 0
   private mouseX = -1
   private mouseY = -1
@@ -433,7 +435,7 @@ export class BoardCanvas {
       ctx.fillStyle = gradient
       ctx.fillRect(cx - 130, cy - 130, 260, 260)
     }
-    this.drawMagneticFieldLines()
+    if (this.settings.showFieldLines) this.drawMagneticFieldLines()
   }
 
   private drawMagneticFieldLines(): void {
@@ -565,15 +567,16 @@ export class BoardCanvas {
       else if (overloadRatio > 0.33) fill = '#e67e22'
       else if (overloadRatio > 0) fill = '#f1c40f'
       else if (component instanceof FieldSensorComponent && Math.abs(component.lastEmf) > 0.001) fill = 'rgba(200, 140, 255, 0.45)'
-      if (component.def.behaviorId === 'gear') {
-        this.drawGear(component, x, y, w, h)
-        this.strokeState(component, x, y, w, h, selected, lockedSet)
-        continue
+      const isGear = component.def.behaviorId === 'gear'
+      const isRotatable = component.def.behaviorTags['rotatable'] === '1'
+      if (isRotatable) this.drawRealGear(component, x, y, w, h)
+      if (!isGear) {
+        const inset = isRotatable ? 13 : 4
+        ctx.fillStyle = fill
+        ctx.beginPath()
+        ctx.roundRect(x + inset, y + inset, w - inset * 2, h - inset * 2, 6)
+        ctx.fill()
       }
-      ctx.fillStyle = fill
-      ctx.beginPath()
-      ctx.roundRect(x + 4, y + 4, w - 8, h - 8, 6)
-      ctx.fill()
       this.strokeState(component, x, y, w, h, selected, lockedSet)
       ctx.fillStyle = '#ecf0f1'
       ctx.font = '11px system-ui, sans-serif'
@@ -627,21 +630,24 @@ export class BoardCanvas {
     }
     const ctx = this.ctx
     const lines: string[] = [component instanceof FourthGeneratorComponent ? component.customName : component.def.displayName]
+    const isRotatable = component.def.behaviorTags['rotatable'] === '1'
     if (component.def.portCount > 0) {
-      lines.push('R = ' + this.formatPhysical(component.getResistance()) + ' Ω')
-      lines.push('I = ' + Math.abs(component.current).toFixed(3) + ' A')
-      lines.push('V = ' + (component.voltage >= 0 ? '' : '-') + Math.abs(component.voltage).toFixed(3) + ' V')
+      lines.push('R = ' + this.formatResistanceDisplay(component.getResistance()))
+      lines.push('I = ' + formatWithPrefix(Math.abs(component.current), this.settings.prefixCurrent, 'A'))
+      lines.push('V = ' + (component.voltage >= 0 ? '' : '-') + formatWithPrefix(Math.abs(component.voltage), this.settings.prefixVoltage, 'V'))
       if (component.def.behaviorTags['sensorField'] === 'magnetic') {
-        lines.push('B = ' + component.getSensedFluxDensity().toFixed(2) + ' mT')
-        lines.push('Φ = ' + component.getSensedFlux().toFixed(3) + ' mWb')
+        lines.push('B = ' + formatWithPrefix(component.getSensedFluxDensity() * 1e-3, this.settings.prefixFluxDensity, 'T'))
+        lines.push('Φ = ' + formatWithPrefix(component.getSensedFlux() * 1e-3, this.settings.prefixFlux, 'Wb'))
       }
       if (component instanceof VoltageTransformerComponent) {
-        lines.push('输入 V = ' + component.getInputVoltage().toFixed(2) + ' V')
-        lines.push('输入 I = ' + Math.abs(component.getInputCurrent()).toFixed(3) + ' A')
+        lines.push('输入 V = ' + formatWithPrefix(component.getInputVoltage(), this.settings.prefixVoltage, 'V'))
+        lines.push('输入 I = ' + formatWithPrefix(Math.abs(component.getInputCurrent()), this.settings.prefixCurrent, 'A'))
       }
     } else {
       lines.push('不接电的机械元件')
-      lines.push('转速 = ' + (component.rotationSpeed >= 0 ? '' : '-') + Math.abs(component.rotationSpeed / (Math.PI * 2)).toFixed(2) + ' 转/秒')
+    }
+    if (isRotatable) {
+      lines.push('转速 = ' + formatAngularValue(component.rotationSpeed, this.settings.angularUnit))
     }
     ctx.font = '11px system-ui, sans-serif'
     let width = 0
@@ -676,36 +682,49 @@ export class BoardCanvas {
     }
   }
 
-  private formatPhysical(value: number): string {
-    if (value === Number.POSITIVE_INFINITY) return '∞'
-    if (value >= 1) return value.toFixed(2)
-    return value.toExponential(2)
+  private formatResistanceDisplay(value: number): string {
+    if (value === Number.POSITIVE_INFINITY) return '∞（断开）'
+    return formatWithPrefix(value, this.settings.prefixResistance, 'Ω')
   }
 
-  private drawGear(component: BaseComponent, x: number, y: number, w: number, h: number): void {
+  private drawRealGear(component: BaseComponent, x: number, y: number, w: number, h: number): void {
     const ctx = this.ctx
     const cx = x + w / 2
     const cy = y + h / 2
-    const radius = Math.min(w, h) / 2 - 4
-    ctx.fillStyle = '#54646f'
+    const radius = Math.min(w, h) / 2
+    const teeth = component.teeth
+    const elapsed = Math.min(0.25, Math.max(0, (performance.now() - component.rotationAngleAt) / 1000))
+    const angle = component.rotationAngle + component.rotationSpeed * elapsed
+    const tipRadius = radius + 3
+    const rootRadius = radius - 5
+    const toothHalf = (Math.PI / teeth) * 0.42
+    ctx.fillStyle = '#4d5a64'
     ctx.beginPath()
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+    ctx.arc(cx, cy, rootRadius, 0, Math.PI * 2)
     ctx.fill()
+    ctx.fillStyle = '#5d6d78'
+    for (let i = 0; i < teeth; i++) {
+      const a = angle + (i * Math.PI * 2) / teeth
+      ctx.beginPath()
+      ctx.moveTo(cx + Math.cos(a - toothHalf) * rootRadius, cy + Math.sin(a - toothHalf) * rootRadius)
+      ctx.arc(cx, cy, tipRadius, a - toothHalf, a + toothHalf)
+      ctx.lineTo(cx + Math.cos(a + toothHalf) * rootRadius, cy + Math.sin(a + toothHalf) * rootRadius)
+      ctx.closePath()
+      ctx.fill()
+    }
     ctx.strokeStyle = '#8fa1ad'
     ctx.lineWidth = 2
-    ctx.setLineDash([5, 4])
-    ctx.beginPath()
-    ctx.arc(cx, cy, radius + 3, 0, Math.PI * 2)
-    ctx.stroke()
-    ctx.setLineDash([])
-    const angle = this.callbacks.getSimTime() * component.rotationSpeed
     for (let i = 0; i < 3; i++) {
       const spoke = angle + (i * Math.PI * 2) / 3
       ctx.beginPath()
-      ctx.moveTo(cx, cy)
-      ctx.lineTo(cx + Math.cos(spoke) * radius, cy + Math.sin(spoke) * radius)
+      ctx.moveTo(cx + Math.cos(spoke) * rootRadius * 0.18, cy + Math.sin(spoke) * rootRadius * 0.18)
+      ctx.lineTo(cx + Math.cos(spoke) * rootRadius * 0.92, cy + Math.sin(spoke) * rootRadius * 0.92)
       ctx.stroke()
     }
+    ctx.fillStyle = '#37424b'
+    ctx.beginPath()
+    ctx.arc(cx, cy, Math.max(4, rootRadius * 0.22), 0, Math.PI * 2)
+    ctx.fill()
   }
 
   private strokeState(

@@ -1,4 +1,5 @@
 import type { ComponentDefinition } from './ComponentDefinition'
+import { paramNumber } from './ComponentDefinition'
 import type { MnaModel } from '../circuit/MnaModel'
 import { Port } from '../circuit/Port'
 import type { SimulationHost, TickContext } from '../sim/TickContext'
@@ -12,6 +13,7 @@ export abstract class BaseComponent {
   readonly ports: Port[]
   readonly width: number
   readonly height: number
+  readonly teeth: number
   current = 0
   voltage = 0
   overloadSeconds = 0
@@ -20,11 +22,14 @@ export abstract class BaseComponent {
   host: SimulationHost | null = null
   rotationDrive = 0
   rotationSpeed = 0
+  rotationAngle = 0
+  rotationAngleAt = 0
 
   constructor(def: ComponentDefinition) {
     this.def = def
     this.width = def.width ?? 1
     this.height = def.height ?? 1
+    this.teeth = paramNumber(def, 'teeth', 8)
     this.ports = []
     for (let i = 0; i < def.portCount; i++) {
       this.ports.push(new Port(this, i))

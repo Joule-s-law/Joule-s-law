@@ -10,6 +10,6 @@ export const HAND_CRANK: ComponentDefinition = {
   resistance: 3,
   ratedCurrent: 1.5,
   behaviorId: 'voltageSource',
-  behaviorParams: { emf: 10, internalResistance: 3 },
+  behaviorParams: { emf: 10, internalResistance: 3, teeth: 8 },
   behaviorTags: { holdable: '1', rotatable: '1' },
 }

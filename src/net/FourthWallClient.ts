@@ -9,9 +9,35 @@ export class FourthWallClient {
   private pendingSync: GeneratorInfo[] | null = null
 
   constructor(
-    private readonly url: string,
+    private url: string,
     private readonly onTotals: (totals: Record<string, number>) => void,
   ) {}
+
+  getUrl(): string {
+    return this.url
+  }
+
+  changeUrl(url: string): void {
+    if (url === this.url) return
+    this.url = url
+    this.pendingSync = null
+    const socket = this.socket
+    if (socket !== null) {
+      this.socket = null
+      socket.onclose = null
+      socket.onerror = null
+      try {
+        socket.close()
+      } catch {
+        // 忽略关闭失败
+      }
+    }
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.connect()
+  }
 
   connect(): void {
     if (this.socket !== null || this.reconnectTimer !== null) return

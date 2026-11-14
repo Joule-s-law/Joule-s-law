@@ -4,6 +4,7 @@ export interface ComponentDefinition {
   id: string
   displayName: string
   description: string
+  labels?: string[]
   price: number
   priceScaling: number
   portCount: number

@@ -14,6 +14,7 @@ import { BatteryComponent } from '../../core/components/behaviors/BatteryCompone
 import { FourthGeneratorComponent } from '../../core/components/behaviors/FourthGeneratorComponent'
 import { VoltageTransformerComponent } from '../../core/components/behaviors/VoltageTransformerComponent'
 import { FourthWallClient } from '../../net/FourthWallClient'
+import { useSettingsStore } from '../settings/useSettingsStore'
 import { WIRE } from '../../core/components/registry/definitions'
 import { WIRE_MATERIALS } from '../../core/components/registry/wireMaterials'
 import { CELL_SIZE, GRID_COLS, GRID_ROWS, portPosition, wireDistance } from '../board/boardMath'
@@ -26,6 +27,7 @@ export interface ComponentInfo {
   displayName: string
   defId: string
   description: string
+  labels: string[]
   current: number
   voltage: number
   resistance: number
@@ -47,6 +49,8 @@ export interface ComponentInfo {
   fourthGenUuid: string
   fourthGenName: string
   externalEmf: number
+  rotatable: boolean
+  rotationSpeed: number
 }
 
 export interface TechNodeInfo {
@@ -85,8 +89,9 @@ export const useGameStore = defineStore('game', () => {
 
   const uids = new WeakMap<BaseComponent, number>()
   let nextUid = 1
+  const settings = useSettingsStore()
 
-  const fourthWall = new FourthWallClient('ws://localhost:25565/ws', (totals) => {
+  const fourthWall = new FourthWallClient(settings.wsUrl, (totals) => {
     for (const component of sim.components) {
       if (!(component instanceof FourthGeneratorComponent)) continue
       component.externalEmf = totals[component.uuid] ?? 0
@@ -145,6 +150,7 @@ export const useGameStore = defineStore('game', () => {
       displayName: component.def.displayName,
       defId: component.def.id,
       description: component.def.description,
+      labels: component.def.labels ?? [],
       current: component.current,
       voltage: component.voltage,
       resistance: component.getResistance(),
@@ -166,6 +172,8 @@ export const useGameStore = defineStore('game', () => {
       fourthGenUuid: component instanceof FourthGeneratorComponent ? component.uuid : '',
       fourthGenName: component instanceof FourthGeneratorComponent ? component.customName : '',
       externalEmf: component instanceof FourthGeneratorComponent ? component.externalEmf : 0,
+      rotatable: component.def.behaviorTags['rotatable'] === '1',
+      rotationSpeed: component.rotationSpeed,
     }
   }
 
@@ -462,6 +470,14 @@ export const useGameStore = defineStore('game', () => {
     refreshSnapshot()
   }
 
+  function applyWsUrl(url: string): void {
+    const trimmed = url.trim()
+    if (trimmed === '' || fourthWall.getUrl() === trimmed) return
+    fourthWall.changeUrl(trimmed)
+    lastGeneratorSync = ''
+    syncFourthGenerators()
+  }
+
   function unlockedWireMaterials(): string[] {
     return [...WIRE_MATERIALS.keys()].filter((id) => techTree.isWireMaterialUnlocked(id))
   }
@@ -512,6 +528,7 @@ export const useGameStore = defineStore('game', () => {
     setWireMaterial,
     toggleSwitch,
     renameFourthGenerator,
+    applyWsUrl,
     unlockedWireMaterials,
     manualSave,
     CELL_SIZE,

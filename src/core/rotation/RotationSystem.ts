@@ -1,5 +1,5 @@
 import type { BaseComponent } from '../components/BaseComponent'
-import { paramNumber, paramTag } from '../components/ComponentDefinition'
+import { paramTag } from '../components/ComponentDefinition'
 
 const TWO_PI = Math.PI * 2
 const CRANK_RAMP_SECONDS = 2
@@ -34,6 +34,10 @@ export class RotationSystem {
     for (const component of rotatables) {
       if (visited.has(component)) continue
       component.rotationSpeed = paramTag(component.def, 'holdable', '') === '1' ? component.rotationSpeed : 0
+    }
+    for (const component of rotatables) {
+      component.rotationAngle += component.rotationSpeed * dt
+      component.rotationAngleAt = performance.now()
     }
     for (const block of conflictBlocks) {
       for (const component of block) {
@@ -102,9 +106,7 @@ export class RotationSystem {
       const neighbors = this.adjacency.get(entry.component) ?? []
       for (const neighbor of neighbors) {
         const nextDir = -entry.dir
-        const ratioFrom = paramNumber(entry.component.def, 'gearRatio', 1)
-        const ratioTo = paramNumber(neighbor.def, 'gearRatio', 1)
-        const nextSpeed = entry.speed * (ratioFrom / ratioTo)
+        const nextSpeed = entry.speed * (entry.component.teeth / neighbor.teeth)
         const existing = states.get(neighbor)
         if (existing !== undefined) {
           if (existing.dir !== nextDir && (existing.speed !== 0 || nextSpeed !== 0)) {

@@ -12,6 +12,7 @@
       <BoardView class="center" />
       <aside class="right">
         <InfoPanel />
+        <SettingsPanel />
       </aside>
     </main>
     <TechTreeView v-if="game.techTreeOpen" />
@@ -22,6 +23,7 @@
 import TopBar from './ui/components/TopBar.vue'
 import ShopPanel from './ui/components/ShopPanel.vue'
 import InfoPanel from './ui/components/InfoPanel.vue'
+import SettingsPanel from './ui/components/SettingsPanel.vue'
 import BoardView from './ui/components/BoardView.vue'
 import TechTreeView from './ui/components/TechTreeView.vue'
 import { useGameStore } from './ui/stores/useGameStore'
