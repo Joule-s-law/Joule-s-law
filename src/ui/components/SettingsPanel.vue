@@ -25,6 +25,8 @@
       <template v-if="s.debugVisible">
         <div class="debug-header">调试模式（按 P 切换显示）</div>
         <button class="debug-btn" @click="game.addMoney(1000)">+1000 钱</button>
+        <button class="debug-btn" @click="game.debugUnlockEnder()">解锁末影接口</button>
+        <button class="debug-btn" @click="game.debugUnlockAllTech()">解锁全部科技（不含隐藏）</button>
         <label class="row checkbox-row">
           <span>购买/升级免费</span>
           <input type="checkbox" v-model="s.freePurchases" />

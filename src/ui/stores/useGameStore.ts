@@ -68,7 +68,8 @@ export interface ComponentInfo {
 export interface TechNodeInfo {
   id: string
   displayName: string
-  description: string
+  bio: string
+  levelEffect: string
   level: number
   maxLevel: number
   cost: number
@@ -249,7 +250,8 @@ export const useGameStore = defineStore('game', () => {
       infos.push({
         id: node.id,
         displayName: node.displayName,
-        description: node.description,
+        bio: node.bio,
+        levelEffect: node.levelEffect(techTree.getLevel(node.id) + 1),
         level: techTree.getLevel(node.id),
         maxLevel: node.maxLevel,
         cost: techTree.getCost(node.id),
@@ -326,6 +328,20 @@ export const useGameStore = defineStore('game', () => {
 
   function addMoney(amount: number): void {
     sim.economy.money += amount
+    refreshSnapshot()
+  }
+
+  function debugUnlockEnder(): void {
+    techTree.forceUnlock('ender_interface')
+    techVersion.value++
+    unlockedComponentsVersion.value++
+    refreshSnapshot()
+  }
+
+  function debugUnlockAllTech(): void {
+    techTree.forceUnlockAll()
+    techVersion.value++
+    unlockedComponentsVersion.value++
     refreshSnapshot()
   }
 
@@ -790,6 +806,8 @@ export const useGameStore = defineStore('game', () => {
     toggleMonitor,
     randomizeBattery,
     addMoney,
+    debugUnlockEnder,
+    debugUnlockAllTech,
     renameFourthGenerator,
     applyWsUrl,
     unlockedWireMaterials,

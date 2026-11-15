@@ -24,7 +24,8 @@ export class GearComponent extends BaseComponent {
   buildCircuitModel(_model: MnaModel): void {}
 
   onTick(ctx: TickContext): void {
-    this.overSpeed = Math.abs(this.rotationSpeed) > this.maxOmega
+    const maxOmega = this.maxOmega + ctx.host.gearMaxOmegaBonus
+    this.overSpeed = Math.abs(this.rotationSpeed) > maxOmega
     if (!this.overSpeed) return
     const chance = ctx.host.gearBreakdownChance * ctx.dt
     if (chance > 0 && Math.random() < chance) {

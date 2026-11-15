@@ -8,6 +8,7 @@ export interface SimulationHost {
   sensorEfficiencyBoost: number
   lightEmissionBoost: number
   gearBreakdownChance: number
+  gearMaxOmegaBonus: number
   emitEnergy(type: EnergyType, amount: number, x: number, y: number): void
   requestDestroy(component: BaseComponent): void
 }

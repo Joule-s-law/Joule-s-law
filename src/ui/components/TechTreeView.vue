@@ -16,7 +16,7 @@
       ></canvas>
       <aside v-if="selected !== null" class="detail">
         <div class="name">{{ selected.displayName }}</div>
-        <div class="desc">{{ selected.description }}</div>
+        <div class="desc">{{ selected.bio }}</div>
         <div class="row"><span>等级</span><span>{{ selected.level }} / {{ selected.maxLevel }}</span></div>
         <div v-if="selected.parentName !== null" class="row"><span>前置</span><span>{{ selected.parentName }}</span></div>
         <div class="row"><span>下一级费用</span><span>¥ {{ formatCost(selected.cost) }}</span></div>
@@ -28,6 +28,10 @@
         >
           {{ selected.canBuy ? '升级' : '资金不足' }}
         </button>
+        <div v-if="selected.unlocked && selected.level < selected.maxLevel" class="next-effect">
+          <span class="next-label">下一级效果</span>
+          <span>{{ selected.levelEffect }}</span>
+        </div>
         <div v-else-if="selected.level >= selected.maxLevel" class="maxed">已满级</div>
         <div v-else class="locked-tip">需先将「{{ selected.parentName }}」升至 1 级</div>
       </aside>
@@ -216,9 +220,20 @@ function drawNode(context: CanvasRenderingContext2D, node: TechNodeInfo): void {
   }
 
   context.fillStyle = node.unlocked ? '#90a4ae' : '#546e7a'
-  const words = node.description.split('：')
-  context.fillText(words[0] ?? '', node.x + 10, node.y + 62)
-  context.fillText((words.slice(1).join('：')).slice(0, 18), node.x + 10, node.y + 78)
+  const maxTextWidth = NODE_W - 20
+  const line1 = clipText(context, node.bio, maxTextWidth)
+  const consumed = line1.endsWith('…') ? line1.length - 1 : line1.length
+  context.fillText(line1, node.x + 10, node.y + 62)
+  if (consumed < node.bio.length) {
+    context.fillText(clipText(context, node.bio.slice(consumed), maxTextWidth), node.x + 10, node.y + 78)
+  }
+}
+
+function clipText(context: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+  if (context.measureText(text).width <= maxWidth) return text
+  let cut = text.length
+  while (cut > 0 && context.measureText(`${text.slice(0, cut)}…`).width > maxWidth) cut--
+  return `${text.slice(0, cut)}…`
 }
 
 function formatCost(cost: number): string {
@@ -338,6 +353,21 @@ onUnmounted(() => {
   background: #37474f;
   color: #78909c;
   cursor: not-allowed;
+}
+.next-effect {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: #b0bec5;
+  background: #16202e;
+  border: 1px solid #2c3648;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.next-label {
+  color: #ffd54f;
+  font-size: 11px;
 }
 .maxed {
   color: #ffd54f;

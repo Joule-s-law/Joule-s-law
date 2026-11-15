@@ -43,6 +43,7 @@ export class Simulation {
   sensorEfficiencyBoost = 0
   lightEmissionBoost = 0
   gearBreakdownChance = 0.5
+  gearMaxOmegaBonus = 0
   dt = 0.1
   simTime = 0
   clickHeat = 1

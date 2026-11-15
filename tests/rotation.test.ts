@@ -152,13 +152,16 @@ describe('RotationSystem', () => {
     expect(sim.components.includes(gear)).toBe(true)
   })
 
-  it('maxwell tech reduces gear breakdown chance', () => {
+  it('maxwell tech raises gear max omega per level', () => {
     const sim = new Simulation()
     const tech = new TechTree(sim)
     sim.economy.money = 100000
     tech.buy('ohm')
     tech.buy('maxwell')
-    expect(sim.gearBreakdownChance).toBeCloseTo(0.3, 8)
+    expect(sim.gearMaxOmegaBonus).toBeCloseTo(Math.PI * 0.4, 8)
+    tech.buy('maxwell')
+    expect(sim.gearMaxOmegaBonus).toBeCloseTo(Math.PI * 0.8, 8)
+    expect(sim.gearBreakdownChance).toBeCloseTo(0.5, 8)
   })
 
   it('crank emf follows omega with correct polarity per direction', () => {
