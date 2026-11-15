@@ -16,6 +16,12 @@ export function portPosition(component: BaseComponent, portIndex: number): Point
   const top = component.y * CELL_SIZE
   const height = component.height * CELL_SIZE
   if (component.def.portCount === 4) {
+    if (component.def.portLayout === 'rows') {
+      if (portIndex === 0) return { px: baseX + component.width * CELL_SIZE * 0.25, py: top }
+      if (portIndex === 1) return { px: baseX + component.width * CELL_SIZE * 0.75, py: top }
+      if (portIndex === 2) return { px: baseX + component.width * CELL_SIZE * 0.25, py: top + height }
+      return { px: baseX + component.width * CELL_SIZE * 0.75, py: top + height }
+    }
     if (portIndex === 0) return { px: baseX, py: top + height * 0.25 }
     if (portIndex === 1) return { px: baseX, py: top + height * 0.75 }
     if (portIndex === 2) return { px: baseX + component.width * CELL_SIZE, py: top + height * 0.25 }

@@ -15,6 +15,7 @@ export interface ComponentDefinition {
   behaviorTags: Record<string, string>
   width?: number
   height?: number
+  portLayout?: 'rows'
 }
 
 export function paramNumber(def: ComponentDefinition, key: string, fallback: number): number {

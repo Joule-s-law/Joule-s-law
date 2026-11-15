@@ -9,7 +9,10 @@ import { EnergyType } from '../../core/energy/EnergyType'
 import type { EnergyEvent } from '../../core/sim/Simulation'
 import { CELL_SIZE, GRID_COLS, GRID_ROWS, componentAt, portPosition } from './boardMath'
 import { useSettingsStore, formatWithPrefix, formatAngularValue } from '../settings/useSettingsStore'
-import { traceMagneticFieldLines } from './magneticFieldLines'
+import { traceMagneticFieldLines, collectMagneticSources, magneticFieldVector } from './magneticFieldLines'
+import { collectChargeSources, electricFieldAt, traceElectricFieldLines, computeIsolines } from './electricFieldView'
+import type { ChargeSource, FieldLine, Isoline } from './electricFieldView'
+import { ChargedParticle, integrateParticles, LAUNCH_SPEED_MAX, PARTICLE_TIME_SCALE } from './chargedParticles'
 
 export interface BoardCallbacks {
   getComponents(): BaseComponent[]
@@ -60,6 +63,8 @@ const FIELD_COLORS: Record<string, string> = {
 }
 
 const WIRE_PICK_COLORS = ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c', '#3498db', '#9b59b6', '#e84393']
+
+const LORENTZ_THRESHOLD = 0.001
 
 function randomWireColor(exclude: string): string {
   const options = WIRE_PICK_COLORS.filter((color) => color !== exclude)
@@ -128,6 +133,19 @@ export class BoardCanvas {
   private hoverCandidates: BaseComponent[] = []
   private hoverPickIndex = 0
   private tabHeld = false
+  private spaceHeld = false
+  private spaceLocked = false
+  private lastSpaceDown = 0
+  private mouseCharge = 5
+  private charging: { progress: number } | null = null
+  private aiming: { pressX: number; pressY: number } | null = null
+  private launchAngle = 0
+  private particles: ChargedParticle[] = []
+  private chargeBarTimer = 0
+  private frameCount = 0
+  private cachedSources: ChargeSource[] = []
+  private cachedFieldLines: FieldLine[] = []
+  private cachedIsolines: Isoline[] = []
   private floats: FloatText[] = []
 
   constructor(
@@ -196,7 +214,7 @@ export class BoardCanvas {
   }
 
   private updateHoverCandidates(): void {
-    const busy = this.dragComponent !== null || this.dragging !== null || this.sliderDrag !== null || this.heldCrank !== null
+    const busy = this.dragComponent !== null || this.dragging !== null || this.sliderDrag !== null || this.heldCrank !== null || this.spaceHeld
     if (busy || this.mouseX < 0 || this.mouseY < 0) {
       this.hoverCandidates = []
       return
@@ -224,6 +242,13 @@ export class BoardCanvas {
   }
 
   private handleWheel = (event: WheelEvent): void => {
+    if (this.spaceHeld) {
+      event.preventDefault()
+      const step = event.deltaY > 0 ? -1 : 1
+      this.mouseCharge = Math.min(15, Math.max(-15, this.mouseCharge + step))
+      this.chargeBarTimer = 2.2
+      return
+    }
     if (this.hoverCandidates.length < 2) return
     event.preventDefault()
     const count = this.hoverCandidates.length
@@ -258,6 +283,11 @@ export class BoardCanvas {
     const coords = this.toCanvasCoords(event)
     this.mouseX = coords.x
     this.mouseY = coords.y
+    if (this.aiming !== null) {
+      const dx = this.mouseX - this.aiming.pressX
+      const dy = this.mouseY - this.aiming.pressY
+      if (Math.hypot(dx, dy) > 6) this.launchAngle = Math.atan2(dy, dx)
+    }
     if (this.dragging !== null) {
       this.applyDrag()
       return
@@ -280,6 +310,11 @@ export class BoardCanvas {
   }
 
   private handleWindowMouseUp = (): void => {
+    if (this.aiming !== null) this.aiming = null
+    if (this.charging !== null) {
+      this.launchParticle(this.charging.progress)
+      this.charging = null
+    }
     this.dragging = null
     this.sliderDrag = null
     if (this.heldCrank !== null) {
@@ -307,6 +342,11 @@ export class BoardCanvas {
     const coords = this.toCanvasCoords(event)
     this.mouseX = coords.x
     this.mouseY = coords.y
+    if (this.spaceHeld) {
+      if (event.button === 0) this.charging = { progress: 0 }
+      if (event.button === 2) this.aiming = { pressX: coords.x, pressY: coords.y }
+      return
+    }
     this.updateHoverCandidates()
     const dragHit = this.wireControlPointHit()
     if (dragHit !== null) {
@@ -382,14 +422,33 @@ export class BoardCanvas {
       event.preventDefault()
       this.tabHeld = true
     }
+    if (event.key === ' ') {
+      event.preventDefault()
+      if (event.repeat) return
+      const now = performance.now()
+      if (this.spaceLocked) {
+        this.spaceLocked = false
+        this.spaceHeld = false
+      } else if (now - this.lastSpaceDown < 300) {
+        this.spaceLocked = true
+        this.spaceHeld = true
+      } else {
+        this.spaceHeld = true
+      }
+      this.lastSpaceDown = now
+    }
   }
 
   private handleKeyUp = (event: KeyboardEvent): void => {
     if (event.key === 'Tab') this.tabHeld = false
+    if (event.key === ' ' && !this.spaceLocked) this.spaceHeld = false
   }
 
   private handleWindowBlur = (): void => {
     this.tabHeld = false
+    if (!this.spaceLocked) this.spaceHeld = false
+    this.charging = null
+    this.aiming = null
   }
 
   private mouseCell(): { cellX: number; cellY: number } {
@@ -473,12 +532,17 @@ export class BoardCanvas {
   }
 
   private render(): void {
+    this.frameCount++
     const ctx = this.ctx
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
     ctx.fillStyle = '#10141b'
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
     this.drawGrid()
     this.drawFields()
+    if (this.spaceHeld || this.particles.length > 0) {
+      this.cachedSources = collectChargeSources(this.callbacks.getComponents(), this.particles)
+    }
+    if (this.spaceHeld) this.drawElectricFieldLayer()
     this.drawWires()
     this.drawComponents()
     this.drawPorts()
@@ -490,9 +554,226 @@ export class BoardCanvas {
     this.drawClickCooldownRing()
     this.updateFloats()
     this.drawFloats()
+    this.updateParticles()
+    this.drawParticles()
     this.drawHoverTooltip()
     this.drawMonitoredTooltips()
     this.drawIntersectionPanel()
+    if (this.spaceHeld) this.drawElectricOverlay()
+    if (this.charging !== null) this.charging.progress = Math.min(1, this.charging.progress + 1.2 / 60)
+    if (this.chargeBarTimer > 0) this.chargeBarTimer = Math.max(0, this.chargeBarTimer - 1 / 60)
+  }
+
+  private updateParticles(): void {
+    if (this.particles.length === 0) return
+    integrateParticles(this.particles, this.cachedSources, (1 / 60) * PARTICLE_TIME_SCALE)
+    const width = this.canvas.width
+    const height = this.canvas.height
+    this.particles = this.particles.filter((particle) => particle.x > -80 && particle.x < width + 80 && particle.y > -80 && particle.y < height + 80)
+  }
+
+  private launchParticle(progress: number): void {
+    if (this.mouseCharge === 0) return
+    const speed = progress * LAUNCH_SPEED_MAX
+    const particle = new ChargedParticle(
+      this.mouseX,
+      this.mouseY,
+      Math.cos(this.launchAngle) * speed,
+      Math.sin(this.launchAngle) * speed,
+      this.mouseCharge,
+    )
+    if (this.particles.length >= 80) this.particles.shift()
+    this.particles.push(particle)
+  }
+
+  private drawParticles(): void {
+    if (this.particles.length === 0) return
+    const ctx = this.ctx
+    const magneticSources = collectMagneticSources(this.callbacks.getComponents())
+    if (this.spaceHeld) {
+      ctx.lineWidth = 1
+      for (const particle of this.particles) {
+        if (particle.trail.length < 2) continue
+        ctx.strokeStyle = particle.charge > 0 ? 'rgba(239, 83, 80, 0.4)' : 'rgba(66, 165, 245, 0.4)'
+        ctx.beginPath()
+        let started = false
+        for (const point of particle.trail) {
+          if (!started) {
+            ctx.moveTo(point.x, point.y)
+            started = true
+          } else {
+            ctx.lineTo(point.x, point.y)
+          }
+        }
+        ctx.stroke()
+      }
+    }
+    for (const particle of this.particles) {
+      const radius = 3.5 + Math.min(4, Math.abs(particle.charge) * 0.25)
+      ctx.fillStyle = particle.charge > 0 ? '#ef5350' : '#42a5f5'
+      ctx.beginPath()
+      ctx.arc(particle.x, particle.y, radius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = '#10141b'
+      ctx.lineWidth = 1
+      ctx.stroke()
+      ctx.fillStyle = '#ffffff'
+      ctx.font = 'bold 8px system-ui, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(particle.charge > 0 ? '+' : '-', particle.x, particle.y + 3)
+      const field = magneticFieldVector(magneticSources, particle.x, particle.y)
+      const crossZ = particle.charge * (particle.vy * field.bx - particle.vx * field.by)
+      if (Math.abs(crossZ) >= LORENTZ_THRESHOLD) {
+        ctx.strokeStyle = '#ffd54f'
+        ctx.lineWidth = 1.5
+        if (crossZ > 0) {
+          ctx.beginPath()
+          ctx.arc(particle.x, particle.y, (radius + 3.5) * 2, 0, Math.PI * 2)
+          ctx.stroke()
+        } else {
+          const s = 8
+          ctx.beginPath()
+          ctx.moveTo(particle.x - s, particle.y - s)
+          ctx.lineTo(particle.x + s, particle.y + s)
+          ctx.moveTo(particle.x + s, particle.y - s)
+          ctx.lineTo(particle.x - s, particle.y + s)
+          ctx.stroke()
+        }
+      }
+    }
+    ctx.textAlign = 'start'
+  }
+
+  private drawElectricFieldLayer(): void {
+    if (this.frameCount % 2 === 0) {
+      this.cachedFieldLines = traceElectricFieldLines(this.cachedSources, this.canvas.width, this.canvas.height)
+      this.cachedIsolines = computeIsolines(this.cachedSources, this.canvas.width, this.canvas.height)
+    }
+    const ctx = this.ctx
+    ctx.lineCap = 'round'
+    ctx.lineWidth = 1.2
+    for (const line of this.cachedFieldLines) {
+      ctx.strokeStyle = `rgba(110, 220, 200, ${line.alpha})`
+      ctx.beginPath()
+      let started = false
+      for (const point of line.points) {
+        if (!started) {
+          ctx.moveTo(point.x, point.y)
+          started = true
+        } else {
+          ctx.lineTo(point.x, point.y)
+        }
+      }
+      ctx.stroke()
+      this.drawFieldArrows(line.points, line.alpha, '110, 220, 200')
+    }
+    ctx.lineWidth = 1
+    for (const isoline of this.cachedIsolines) {
+      ctx.strokeStyle = isoline.positive ? 'rgba(255, 90, 90, 0.38)' : 'rgba(90, 140, 255, 0.38)'
+      ctx.beginPath()
+      for (let i = 0; i + 1 < isoline.segments.length; i += 2) {
+        const a = isoline.segments[i]
+        const b = isoline.segments[i + 1]
+        if (a === undefined || b === undefined) continue
+        ctx.moveTo(a.x, a.y)
+        ctx.lineTo(b.x, b.y)
+      }
+      ctx.stroke()
+    }
+    ctx.lineCap = 'butt'
+  }
+
+  private drawElectricOverlay(): void {
+    const ctx = this.ctx
+    const charge = this.mouseCharge
+    if (charge !== 0) {
+      const field = electricFieldAt(this.cachedSources, this.mouseX, this.mouseY)
+      if (field !== null) {
+        const fx = field.ex * charge
+        const fy = field.ey * charge
+        const magnitude = Math.hypot(fx, fy)
+        if (magnitude > 1e-6) {
+          const length = 14 + 30 * Math.log10(1 + magnitude / 0.3)
+          const ux = fx / magnitude
+          const uy = fy / magnitude
+          const endX = this.mouseX + ux * length
+          const endY = this.mouseY + uy * length
+          ctx.strokeStyle = charge > 0 ? 'rgba(255, 120, 120, 0.95)' : 'rgba(120, 160, 255, 0.95)'
+          ctx.lineWidth = 2.5
+          ctx.beginPath()
+          ctx.moveTo(this.mouseX + ux * 8, this.mouseY + uy * 8)
+          ctx.lineTo(endX, endY)
+          ctx.stroke()
+          ctx.beginPath()
+          ctx.moveTo(endX - ux * 9 - uy * 5, endY - uy * 9 + ux * 5)
+          ctx.lineTo(endX, endY)
+          ctx.lineTo(endX - ux * 9 + uy * 5, endY - uy * 9 - ux * 5)
+          ctx.stroke()
+        }
+      }
+    }
+    if (this.charging !== null) {
+      ctx.strokeStyle = '#ffd54f'
+      ctx.lineWidth = 4
+      ctx.beginPath()
+      ctx.arc(this.mouseX, this.mouseY, 26, -Math.PI / 2, -Math.PI / 2 + this.charging.progress * Math.PI * 2)
+      ctx.stroke()
+    }
+    const aimLength = 64
+    const aimUx = Math.cos(this.launchAngle)
+    const aimUy = Math.sin(this.launchAngle)
+    const aimEndX = this.mouseX + aimUx * aimLength
+    const aimEndY = this.mouseY + aimUy * aimLength
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(this.mouseX + aimUx * 30, this.mouseY + aimUy * 30)
+    ctx.lineTo(aimEndX, aimEndY)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.moveTo(aimEndX - aimUx * 8 - aimUy * 4, aimEndY - aimUy * 8 + aimUx * 4)
+    ctx.lineTo(aimEndX, aimEndY)
+    ctx.lineTo(aimEndX - aimUx * 8 + aimUy * 4, aimEndY - aimUy * 8 - aimUx * 4)
+    ctx.stroke()
+    if (this.chargeBarTimer > 0) this.drawChargeBar()
+  }
+
+  private drawChargeBar(): void {
+    const ctx = this.ctx
+    const barW = 12
+    const barH = 120
+    const barX = this.mouseX + 34
+    const barY = this.mouseY - barH / 2
+    ctx.fillStyle = 'rgba(20, 26, 38, 0.9)'
+    ctx.strokeStyle = '#3a4a63'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.roundRect(barX - 2, barY - 2, barW + 4, barH + 4, 4)
+    ctx.fill()
+    ctx.stroke()
+    const centerY = barY + barH / 2
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(barX, centerY)
+    ctx.lineTo(barX + barW, centerY)
+    ctx.stroke()
+    const valueY = centerY - (this.mouseCharge / 15) * (barH / 2)
+    ctx.strokeStyle = this.mouseCharge >= 0 ? '#ef5350' : '#42a5f5'
+    ctx.lineWidth = 4
+    ctx.beginPath()
+    ctx.moveTo(barX + barW / 2, centerY)
+    ctx.lineTo(barX + barW / 2, valueY)
+    ctx.stroke()
+    ctx.fillStyle = '#ffffff'
+    ctx.beginPath()
+    ctx.arc(barX + barW / 2, valueY, 3, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#ecf0f1'
+    ctx.font = 'bold 11px system-ui, sans-serif'
+    ctx.textAlign = 'left'
+    ctx.fillText(`${this.mouseCharge > 0 ? '+' : ''}${this.mouseCharge}e`, barX + barW + 8, centerY + 4)
+    ctx.textAlign = 'start'
   }
 
   private updateFloats(): void {
@@ -601,15 +882,15 @@ export class BoardCanvas {
         }
       }
       ctx.stroke()
-      this.drawFieldArrows(line.points, line.alpha)
+      this.drawFieldArrows(line.points, line.alpha, '200, 140, 255')
     }
     ctx.lineCap = 'butt'
   }
 
-  private drawFieldArrows(points: { x: number; y: number }[], alpha: number): void {
+  private drawFieldArrows(points: { x: number; y: number }[], alpha: number, color: string): void {
     const ctx = this.ctx
     const spacing = 90
-    ctx.strokeStyle = `rgba(200, 140, 255, ${Math.min(0.85, alpha + 0.2)})`
+    ctx.strokeStyle = `rgba(${color}, ${Math.min(0.85, alpha + 0.2)})`
     ctx.lineWidth = 1.4
     let distance = 0
     let next = spacing
@@ -799,12 +1080,13 @@ export class BoardCanvas {
         ctx.lineTo(x + w - 6, y + h / 2)
         ctx.stroke()
       } else {
-        this.drawFittedText(component.def.displayName, x + w / 2, isDiode || isMeter ? y + 10 : y + h / 2 + 4, w - 8)
+        const isRheostat = component instanceof RheostatComponent
+        this.drawFittedText(component.def.displayName, x + w / 2, isDiode || isMeter ? y + 10 : isRheostat ? y + 14 : y + h / 2 + 4, w - 8)
       }
       if (isDiode) this.drawDiodeSymbol(x, y, w, h)
       if (isMeter) this.drawMeterDial(component, x, y, w, h)
       if (component instanceof RheostatComponent) this.drawRheostatSlider(component)
-      if (component.def.portCount === 4) {
+      if (component instanceof VoltageTransformerComponent) {
         const gain = component.def.behaviorParams['gain'] ?? 2
         ctx.fillStyle = '#ffd54f'
         ctx.font = '10px system-ui, sans-serif'
@@ -894,6 +1176,7 @@ export class BoardCanvas {
   }
 
   private drawHoverTooltip(): void {
+    if (this.spaceHeld) return
     const drag = this.dragComponent
     const slider = this.sliderDrag
     const pinned = drag !== null || slider !== null
@@ -1135,6 +1418,7 @@ export class BoardCanvas {
   }
 
   private portPolarity(component: BaseComponent): Record<number, string> {
+    if (component.def.portLayout === 'rows') return {}
     if (component.def.portCount === 4) {
       return { 0: '+', 1: '-', 2: '+', 3: '-' }
     }
@@ -1176,19 +1460,24 @@ export class BoardCanvas {
     const x = component.x * CELL_SIZE
     const y = component.y * CELL_SIZE
     const w = component.width * CELL_SIZE
-    const trackY = y - 6 < 2 ? y + 6 : y - 4
-    return { trackX: x + 6, trackY, trackW: w - 12 }
+    const h = component.height * CELL_SIZE
+    return { trackX: x + 6, trackY: y + h / 2, trackW: w - 12 }
   }
 
   private drawRheostatSlider(component: RheostatComponent): void {
     const ctx = this.ctx
     const geom = this.sliderTrackGeom(component)
-    ctx.strokeStyle = '#78909c'
-    ctx.lineWidth = 4
+    ctx.strokeStyle = '#90a4ae'
+    ctx.lineWidth = 3
     ctx.lineCap = 'round'
     ctx.beginPath()
     ctx.moveTo(geom.trackX, geom.trackY)
     ctx.lineTo(geom.trackX + geom.trackW, geom.trackY)
+    ctx.stroke()
+    ctx.strokeStyle = '#546e7a'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(geom.trackX + geom.trackW / 2, geom.trackY + 10, 9, 0, Math.PI * 2)
     ctx.stroke()
     ctx.lineCap = 'butt'
     const knobX = geom.trackX + geom.trackW * component.sliderPosition

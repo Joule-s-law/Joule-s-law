@@ -75,6 +75,14 @@ export abstract class BaseComponent {
     const top = this.y * CELL_SIZE
     const height = this.height * CELL_SIZE
     if (this.def.portCount === 4) {
+      if (this.def.portLayout === 'rows') {
+        const left = this.x * CELL_SIZE
+        const w = this.width * CELL_SIZE
+        if (index === 0) return { x: left + w * 0.25, y: top }
+        if (index === 1) return { x: left + w * 0.75, y: top }
+        if (index === 2) return { x: left + w * 0.25, y: top + height }
+        return { x: left + w * 0.75, y: top + height }
+      }
       if (index === 0) return { x: this.x * CELL_SIZE, y: top + height * 0.25 }
       if (index === 1) return { x: this.x * CELL_SIZE, y: top + height * 0.75 }
       if (index === 2) return { x: (this.x + this.width) * CELL_SIZE, y: top + height * 0.25 }

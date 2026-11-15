@@ -59,6 +59,21 @@ function totalFieldDirection(sources: MagneticSource[], px: number, py: number):
   return { x: bx / magnitude, y: by / magnitude }
 }
 
+export function magneticFieldVector(sources: MagneticSource[], px: number, py: number): { bx: number; by: number } {
+  let bx = 0
+  let by = 0
+  for (const source of sources) {
+    const dx = px - source.x
+    const dy = py - source.y
+    const r2 = dx * dx + dy * dy
+    if (r2 < MIN_SOURCE_DIST * MIN_SOURCE_DIST) continue
+    const r5 = r2 * r2 * Math.sqrt(r2)
+    bx += (source.moment * (2 * dx * dx - dy * dy)) / r5
+    by += (source.moment * 3 * dx * dy) / r5
+  }
+  return { bx, by }
+}
+
 function march(
   seed: Point,
   direction: number,
