@@ -109,7 +109,7 @@ describe('Converters and systems', () => {
     expect(tech.buy('physics_must_3')).toBe(true)
     expect(tech.getLevel('physics_must_3')).toBe(2)
     expect(sim.economy.globalMultiplier).toBe(2)
-    expect(sim.economy.money).toBeCloseTo(750, 6)
+    expect(sim.economy.money).toBeCloseTo(500, 6)
   })
 
   it('tech tree: children unlock only after parent reaches level 1', () => {

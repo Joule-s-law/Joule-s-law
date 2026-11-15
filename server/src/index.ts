@@ -9,31 +9,40 @@ interface IncomingMessage {
   uuid?: string
   name?: string
   emf?: number
+  max?: number
   generators?: { uuid?: string; name?: string }[]
+}
+
+interface Contribution {
+  emf: number
+  max: number
 }
 
 type Conn = RawSocket
 
 const sockets = new Set<Conn>()
 const gameSockets = new Set<Conn>()
-const contributions = new Map<Conn, Map<string, number>>()
+const contributions = new Map<Conn, Map<string, Contribution>>()
 const generators = new Map<string, string>()
 
 function isGame(socket: Conn): boolean {
   return gameSockets.has(socket)
 }
 
-function totals(): Record<string, number> {
-  const result: Record<string, number> = {}
+function totals(): { emf: Record<string, number>; max: Record<string, number> } {
+  const emf: Record<string, number> = {}
+  const max: Record<string, number> = {}
   for (const byUuid of contributions.values()) {
-    for (const [uuid, emf] of byUuid) {
-      result[uuid] = (result[uuid] ?? 0) + emf
+    for (const [uuid, contribution] of byUuid) {
+      emf[uuid] = (emf[uuid] ?? 0) + contribution.emf
+      max[uuid] = (max[uuid] ?? 0) + contribution.max
     }
   }
   for (const [uuid] of generators) {
-    if (result[uuid] === undefined) result[uuid] = 0
+    if (emf[uuid] === undefined) emf[uuid] = 0
+    if (max[uuid] === undefined) max[uuid] = 0
   }
-  return result
+  return { emf, max }
 }
 
 function broadcast(message: Record<string, unknown>): void {
@@ -48,7 +57,8 @@ function broadcastGenerators(): void {
 }
 
 function broadcastEmf(): void {
-  broadcast({ type: 'emf', totals: totals() })
+  const { emf, max } = totals()
+  broadcast({ type: 'emf', totals: emf, maxTotals: max })
 }
 
 function pruneUnknownUuids(): void {
@@ -102,18 +112,20 @@ const app = new Elysia()
       }
       if (data.type === 'list') {
         conn.send(JSON.stringify({ type: 'generators', list: [...generators.entries()].map(([uuid, name]) => ({ uuid, name })) }))
-        conn.send(JSON.stringify({ type: 'emf', totals: totals() }))
+        const { emf, max } = totals()
+        conn.send(JSON.stringify({ type: 'emf', totals: emf, maxTotals: max }))
         return
       }
       if (data.type === 'contribute' && typeof data.uuid === 'string' && typeof data.emf === 'number' && Number.isFinite(data.emf)) {
         if (isGame(conn)) return
         if (!generators.has(data.uuid)) return
+        const max = typeof data.max === 'number' && Number.isFinite(data.max) && data.max > 0 ? data.max : 0
         let byUuid = contributions.get(conn)
         if (byUuid === undefined) {
           byUuid = new Map()
           contributions.set(conn, byUuid)
         }
-        byUuid.set(data.uuid, data.emf)
+        byUuid.set(data.uuid, { emf: data.emf, max })
         broadcastEmf()
       }
     },

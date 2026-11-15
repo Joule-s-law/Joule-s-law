@@ -1087,16 +1087,7 @@ export class BoardCanvas {
       const isMeter = component.def.id === 'ammeter' || component.def.id === 'voltmeter'
       if (isFourth) {
         this.drawFittedText(component.customName, x + w / 2, y + 15, w - 8)
-        ctx.strokeStyle = '#b388ff'
-        ctx.lineWidth = 1.5
-        ctx.beginPath()
-        ctx.moveTo(x + 6, y + h / 2)
-        ctx.lineTo(x + w * 0.34, y + h / 2)
-        ctx.lineTo(x + w * 0.44, y + h * 0.28)
-        ctx.lineTo(x + w * 0.56, y + h * 0.72)
-        ctx.lineTo(x + w * 0.66, y + h / 2)
-        ctx.lineTo(x + w - 6, y + h / 2)
-        ctx.stroke()
+        this.drawFourthDial(component, x, y, w, h)
       } else {
         const isRheostat = component instanceof RheostatComponent
         const isBattery = component instanceof BatteryComponent
@@ -1273,6 +1264,48 @@ export class BoardCanvas {
   private formatResistanceDisplay(value: number): string {
     if (value === Number.POSITIVE_INFINITY) return '∞（断开）'
     return formatWithPrefix(value, this.settings.prefixResistance, 'Ω')
+  }
+
+  private drawFourthDial(component: FourthGeneratorComponent, x: number, y: number, w: number, h: number): void {
+    const ctx = this.ctx
+    const cx = x + w / 2
+    const cy = y + h / 2 + 8
+    const radius = Math.min(w, h) / 2 - 22
+    const progress = component.externalMaxEmf > 0
+      ? Math.min(Math.max(component.externalEmf / component.externalMaxEmf, 0), 1)
+      : 0
+    const startAngle = Math.PI * 0.75
+    const sweep = Math.PI * 1.5
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = '#2c3648'
+    ctx.lineWidth = 11
+    ctx.beginPath()
+    ctx.arc(cx, cy, radius, startAngle, startAngle + sweep)
+    ctx.stroke()
+    if (progress > 0) {
+      ctx.strokeStyle = component.externalEmf > component.externalMaxEmf ? '#ef5350' : '#b388ff'
+      ctx.beginPath()
+      ctx.arc(cx, cy, radius, startAngle, startAngle + sweep * progress)
+      ctx.stroke()
+    }
+    const needleAngle = startAngle + sweep * progress
+    ctx.strokeStyle = '#ecf0f1'
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    ctx.moveTo(cx - Math.cos(needleAngle) * 10, cy - Math.sin(needleAngle) * 10)
+    ctx.lineTo(cx + Math.cos(needleAngle) * (radius - 8), cy + Math.sin(needleAngle) * (radius - 8))
+    ctx.stroke()
+    ctx.fillStyle = '#ecf0f1'
+    ctx.beginPath()
+    ctx.arc(cx, cy, 4, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#b388ff'
+    ctx.font = 'bold 12px system-ui, sans-serif'
+    ctx.fillText((progress * 100).toFixed(1) + '%', cx, cy + radius - 4)
+    ctx.fillStyle = '#78909c'
+    ctx.font = '9px system-ui, sans-serif'
+    ctx.fillText(`${component.externalEmf >= 0 ? '+' : ''}${component.externalEmf.toFixed(2)} / ${component.externalMaxEmf.toFixed(1)} V`, cx, cy + radius + 12)
+    ctx.lineCap = 'butt'
   }
 
   private drawMeterDial(component: BaseComponent, x: number, y: number, w: number, h: number): void {

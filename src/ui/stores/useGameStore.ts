@@ -54,6 +54,7 @@ export interface ComponentInfo {
   fourthGenUuid: string
   fourthGenName: string
   externalEmf: number
+  externalMaxEmf: number
   rotatable: boolean
   rotationSpeed: number
   monitored: boolean
@@ -119,10 +120,11 @@ export const useGameStore = defineStore('game', () => {
   let nextUid = 1
   const settings = useSettingsStore()
 
-  const fourthWall = new FourthWallClient(settings.wsUrl, (totals) => {
+  const fourthWall = new FourthWallClient(settings.wsUrl, (totals, maxTotals) => {
     for (const component of sim.components) {
       if (!(component instanceof FourthGeneratorComponent)) continue
       component.externalEmf = totals[component.uuid] ?? 0
+      component.externalMaxEmf = maxTotals[component.uuid] ?? 0
     }
   })
   let lastGeneratorSync = ''
@@ -211,6 +213,7 @@ export const useGameStore = defineStore('game', () => {
       fourthGenUuid: component instanceof FourthGeneratorComponent ? component.uuid : '',
       fourthGenName: component instanceof FourthGeneratorComponent ? component.customName : '',
       externalEmf: component instanceof FourthGeneratorComponent ? component.externalEmf : 0,
+      externalMaxEmf: component instanceof FourthGeneratorComponent ? component.externalMaxEmf : 0,
       rotatable: component.def.behaviorTags['rotatable'] === '1',
       rotationSpeed: component.rotationSpeed,
       monitored: component.monitored,

@@ -7,6 +7,7 @@ export class FourthGeneratorComponent extends BaseComponent {
   readonly uuid: string
   customName: string
   externalEmf = 0
+  externalMaxEmf = 0
 
   constructor(def: ComponentDefinition, options?: { uuid?: string; customName?: string }) {
     super(def)

@@ -93,6 +93,8 @@
           />
         </div>
         <div class="row"><span>外部总电动势</span><span :class="{ danger: info.externalEmf < 0 }">{{ info.externalEmf >= 0 ? '+' : '' }}{{ info.externalEmf.toFixed(2) }} V</span></div>
+        <div class="row"><span>最大电动势合计</span><span>{{ info.externalMaxEmf.toFixed(2) }} V</span></div>
+        <div class="row"><span>供电进度</span><span>{{ (info.externalMaxEmf > 0 ? Math.min(Math.max(info.externalEmf / info.externalMaxEmf, 0), 1) * 100 : 0).toFixed(1) }}%</span></div>
         <div class="row uuid-row"><span>uuid</span><span class="uuid">{{ info.fourthGenUuid }}</span></div>
       </div>
 

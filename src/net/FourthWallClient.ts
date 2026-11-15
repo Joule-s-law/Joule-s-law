@@ -10,7 +10,7 @@ export class FourthWallClient {
 
   constructor(
     private url: string,
-    private readonly onTotals: (totals: Record<string, number>) => void,
+    private readonly onTotals: (totals: Record<string, number>, maxTotals: Record<string, number>) => void,
   ) {}
 
   getUrl(): string {
@@ -56,14 +56,14 @@ export class FourthWallClient {
       }
     }
     socket.onmessage = (event) => {
-      let data: { type?: string; totals?: Record<string, number> }
+      let data: { type?: string; totals?: Record<string, number>; maxTotals?: Record<string, number> }
       try {
-        data = JSON.parse(String(event.data)) as { type?: string; totals?: Record<string, number> }
+        data = JSON.parse(String(event.data)) as { type?: string; totals?: Record<string, number>; maxTotals?: Record<string, number> }
       } catch {
         return
       }
       if (data.type === 'emf' && data.totals !== undefined) {
-        this.onTotals(data.totals)
+        this.onTotals(data.totals, data.maxTotals ?? {})
       }
     }
     socket.onclose = () => {

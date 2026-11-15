@@ -13,4 +13,6 @@ export const FOURTH_GENERATOR: ComponentDefinition = {
   behaviorId: 'fourthGenerator',
   behaviorParams: { overloadTolerance: 2 },
   behaviorTags: {},
+  width: 3,
+  height: 3,
 }
