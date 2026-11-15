@@ -54,6 +54,14 @@ export interface ComponentInfo {
   rotatable: boolean
   rotationSpeed: number
   monitored: boolean
+  batteryConfig: {
+    negativeName: string
+    positiveName: string
+    electrolyteName: string
+    cationName: string
+    anionName: string
+    membrane: string
+  } | null
 }
 
 export interface TechNodeInfo {
@@ -194,6 +202,17 @@ export const useGameStore = defineStore('game', () => {
       rotatable: component.def.behaviorTags['rotatable'] === '1',
       rotationSpeed: component.rotationSpeed,
       monitored: component.monitored,
+      batteryConfig:
+        component instanceof BatteryComponent
+          ? {
+              negativeName: component.cellConfig.negativeName,
+              positiveName: component.cellConfig.positiveName,
+              electrolyteName: component.cellConfig.electrolyteName,
+              cationName: component.cellConfig.cationName,
+              anionName: component.cellConfig.anionName,
+              membrane: component.cellConfig.membrane,
+            }
+          : null,
     }
   }
 
@@ -680,6 +699,14 @@ export const useGameStore = defineStore('game', () => {
     refreshSnapshot()
   }
 
+  function randomizeBattery(): void {
+    const selected = selectedComponent.value
+    if (selected instanceof BatteryComponent) {
+      selected.randomizeCellConfig()
+      refreshSnapshot()
+    }
+  }
+
   function renameFourthGenerator(name: string): void {
     const selected = selectedComponent.value
     if (!(selected instanceof FourthGeneratorComponent)) return
@@ -752,6 +779,7 @@ export const useGameStore = defineStore('game', () => {
     setWireColor,
     toggleSwitch,
     toggleMonitor,
+    randomizeBattery,
     renameFourthGenerator,
     applyWsUrl,
     unlockedWireMaterials,

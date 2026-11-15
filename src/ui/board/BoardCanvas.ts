@@ -1,6 +1,8 @@
 import type { BaseComponent } from '../../core/components/BaseComponent'
 import { WireComponent } from '../../core/components/behaviors/WireComponent'
 import { ChainDriveComponent } from '../../core/components/behaviors/ChainDriveComponent'
+import { BatteryComponent } from '../../core/components/behaviors/BatteryComponent'
+import { SwitchComponent } from '../../core/components/behaviors/SwitchComponent'
 import { RheostatComponent } from '../../core/components/behaviors/RheostatComponent'
 import { FourthGeneratorComponent } from '../../core/components/behaviors/FourthGeneratorComponent'
 import { VoltageTransformerComponent } from '../../core/components/behaviors/VoltageTransformerComponent'
@@ -66,6 +68,15 @@ const WIRE_PICK_COLORS = ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c',
 
 const LORENTZ_THRESHOLD = 0.001
 
+const ELECTRODE_COLORS: Record<string, string> = {
+  '铅 Pb': '#546e7a',
+  '二氧化铅 PbO₂': '#3e2723',
+  '镉 Cd': '#607d8b',
+  '氢氧化镍 NiOOH': '#263238',
+  '石墨嵌锂 LiC₆': '#37474f',
+  '钴酸锂 LiCoO₂': '#1a237e',
+}
+
 function randomWireColor(exclude: string): string {
   const options = WIRE_PICK_COLORS.filter((color) => color !== exclude)
   return options[Math.floor(Math.random() * options.length)] ?? '#e74c3c'
@@ -126,7 +137,7 @@ export class BoardCanvas {
   private mouseY = -1
   private time = 0
   private dragging: { wire: WireComponent; end: 'cpA' | 'cpB' } | null = null
-  private dragComponent: { component: BaseComponent; grabDX: number; grabDY: number; lastCellX: number; lastCellY: number } | null = null
+  private dragComponent: { component: BaseComponent; grabDX: number; grabDY: number; lastCellX: number; lastCellY: number; moved: boolean } | null = null
   private sliderDrag: RheostatComponent | null = null
   private heldCrank: BaseComponent | null = null
   private hoverComponent: BaseComponent | null = null
@@ -303,6 +314,7 @@ export class BoardCanvas {
       if (cellX >= 0 && cellX < GRID_COLS && cellY >= 0 && cellY < GRID_ROWS && (cellX !== drag.lastCellX || cellY !== drag.lastCellY)) {
         drag.lastCellX = cellX
         drag.lastCellY = cellY
+        drag.moved = true
         this.callbacks.onComponentMove(drag.component, cellX, cellY)
         this.revalidateWireColors(drag.component)
       }
@@ -322,6 +334,9 @@ export class BoardCanvas {
       this.heldCrank = null
     }
     if (this.dragComponent !== null) {
+      if (!this.dragComponent.moved && this.dragComponent.component instanceof SwitchComponent) {
+        this.dragComponent.component.closed = !this.dragComponent.component.closed
+      }
       this.dragComponent = null
     }
   }
@@ -403,6 +418,7 @@ export class BoardCanvas {
           grabDY: this.mouseY - cellY,
           lastCellX: picked.x,
           lastCellY: picked.y,
+          moved: false,
         }
       }
       return
@@ -1050,6 +1066,7 @@ export class BoardCanvas {
       else if (overloadRatio > 0.33) fill = '#e67e22'
       else if (overloadRatio > 0) fill = '#f1c40f'
       else if (component instanceof FieldSensorComponent && Math.abs(component.lastEmf) > 0.001) fill = 'rgba(200, 140, 255, 0.45)'
+      else if (component instanceof SwitchComponent) fill = component.closed ? '#1e8e4e' : '#c0392b'
       const isGear = component.def.behaviorId === 'gear'
       const isRotatable = component.def.behaviorTags['rotatable'] === '1'
       if (isRotatable) this.drawRealGear(component, x, y, w, h)
@@ -1081,10 +1098,12 @@ export class BoardCanvas {
         ctx.stroke()
       } else {
         const isRheostat = component instanceof RheostatComponent
-        this.drawFittedText(component.def.displayName, x + w / 2, isDiode || isMeter ? y + 10 : isRheostat ? y + 14 : y + h / 2 + 4, w - 8)
+        const isBattery = component instanceof BatteryComponent
+        this.drawFittedText(component.def.displayName, x + w / 2, isDiode || isMeter ? y + 10 : isRheostat || isBattery ? y + 14 : y + h / 2 + 4, w - 8)
       }
       if (isDiode) this.drawDiodeSymbol(x, y, w, h)
       if (isMeter) this.drawMeterDial(component, x, y, w, h)
+      if (component instanceof BatteryComponent) this.drawBatteryCell(component, x, y, w, h)
       if (component instanceof RheostatComponent) this.drawRheostatSlider(component)
       if (component instanceof VoltageTransformerComponent) {
         const gain = component.def.behaviorParams['gain'] ?? 2
@@ -1423,9 +1442,6 @@ export class BoardCanvas {
       return { 0: '+', 1: '-', 2: '+', 3: '-' }
     }
     if (component.def.portCount !== 2) return {}
-    if (component.def.behaviorId === 'battery') {
-      return { 0: '-', 1: '+' }
-    }
     if (component.def.behaviorId === 'diode') {
       if (Math.abs(component.voltage) > 0.0005) {
         return component.voltage > 0 ? { 0: '+', 1: '-' } : { 0: '-', 1: '+' }
@@ -1454,6 +1470,58 @@ export class BoardCanvas {
     ctx.moveTo(x + w / 2 + 4, cy - 8)
     ctx.lineTo(x + w / 2 + 4, cy + 8)
     ctx.stroke()
+  }
+
+  private drawBatteryCell(component: BatteryComponent, x: number, y: number, w: number, h: number): void {
+    const ctx = this.ctx
+    const config = component.cellConfig
+    const panelW = 46
+    const solutionX = x + panelW
+    const solutionW = w - panelW * 2
+    const solutionY = y + 26
+    const solutionH = h - 48
+    ctx.fillStyle = config.solutionColor
+    ctx.globalAlpha = 0.6
+    ctx.fillRect(solutionX, solutionY, solutionW, solutionH)
+    ctx.globalAlpha = 1
+    if (config.membrane !== 'none') {
+      const membraneX = solutionX + solutionW * 0.5
+      ctx.strokeStyle = '#eceff1'
+      ctx.lineWidth = 2
+      ctx.setLineDash([6, 4])
+      ctx.beginPath()
+      ctx.moveTo(membraneX, solutionY)
+      ctx.lineTo(membraneX, solutionY + solutionH)
+      ctx.stroke()
+      ctx.setLineDash([])
+      ctx.fillStyle = '#eceff1'
+      ctx.font = '8px system-ui, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(config.membrane === 'cation' ? '阳离子交换膜' : '阴离子交换膜', membraneX, solutionY - 5)
+    }
+    for (const ion of component.ions) {
+      const px = solutionX + ion.nx * solutionW
+      const py = solutionY + ion.ny * solutionH
+      ctx.fillStyle = ion.cation ? config.cationColor : config.anionColor
+      ctx.beginPath()
+      ctx.arc(px, py, 3, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    const leftName = config.flipped ? config.positiveName : config.negativeName
+    const rightName = config.flipped ? config.negativeName : config.positiveName
+    const leftColor = config.flipped ? ELECTRODE_COLORS[config.positiveName] : ELECTRODE_COLORS[config.negativeName]
+    const rightColor = config.flipped ? ELECTRODE_COLORS[config.negativeName] : ELECTRODE_COLORS[config.positiveName]
+    const panelBodyW = panelW - 14
+    ctx.fillStyle = leftColor ?? '#546e7a'
+    ctx.fillRect(x + 8, solutionY, panelBodyW, solutionH)
+    ctx.fillStyle = rightColor ?? '#546e7a'
+    ctx.fillRect(x + w - panelW + 6, solutionY, panelBodyW, solutionH)
+    ctx.fillStyle = '#eceff1'
+    ctx.font = '9px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    this.drawFittedText(leftName, x + 8 + panelBodyW / 2, solutionY + solutionH / 2 + 3, panelBodyW - 6)
+    this.drawFittedText(rightName, x + w - panelW + 6 + panelBodyW / 2, solutionY + solutionH / 2 + 3, panelBodyW - 6)
+    ctx.textAlign = 'start'
   }
 
   private sliderTrackGeom(component: RheostatComponent): { trackX: number; trackY: number; trackW: number } {

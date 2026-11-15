@@ -23,6 +23,7 @@ export interface ComponentCreateOptions {
   wireControlPointA?: { x: number; y: number }
   wireControlPointB?: { x: number; y: number }
   batteryStateOfCharge?: number
+  batteryCell?: { pairIndex: number; electrolyteIndex: number; membrane: 'none' | 'cation' | 'anion'; flipped: boolean }
   switchClosed?: boolean
   fourthGenUuid?: string
   fourthGenName?: string
@@ -52,7 +53,7 @@ export function createComponent(def: ComponentDefinition, options?: ComponentCre
     case 'turbine':
       return new TurbineComponent(def)
     case 'battery':
-      return new BatteryComponent(def, options?.batteryStateOfCharge)
+      return new BatteryComponent(def, options?.batteryStateOfCharge, options?.batteryCell)
     case 'switch':
       return new SwitchComponent(def, options?.switchClosed)
     case 'fieldSensor':

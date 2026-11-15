@@ -23,6 +23,7 @@ interface SavedComponent {
   wireControlPointA?: { x: number; y: number }
   wireControlPointB?: { x: number; y: number }
   batterySoc?: number
+  batteryCell?: { pairIndex: number; electrolyteIndex: number; membrane: 'none' | 'cation' | 'anion'; flipped: boolean }
   switchClosed?: boolean
   fourthGenUuid?: string
   fourthGenName?: string
@@ -110,7 +111,17 @@ export class SaveService {
             wireControlPointB: component.getControlPoints().b,
           }
         : {}),
-      ...(component instanceof BatteryComponent ? { batterySoc: component.stateOfCharge } : {}),
+      ...(component instanceof BatteryComponent
+        ? {
+            batterySoc: component.stateOfCharge,
+            batteryCell: {
+              pairIndex: component.cellConfig.pairIndex,
+              electrolyteIndex: component.cellConfig.electrolyteIndex,
+              membrane: component.cellConfig.membrane,
+              flipped: component.cellConfig.flipped,
+            },
+          }
+        : {}),
       ...(component instanceof SwitchComponent ? { switchClosed: component.closed } : {}),
       ...(component instanceof FourthGeneratorComponent
         ? { fourthGenUuid: component.uuid, fourthGenName: component.customName }
@@ -180,6 +191,7 @@ export class SaveService {
           wireControlPointA: saved.wireControlPointA,
           wireControlPointB: saved.wireControlPointB,
           batteryStateOfCharge: saved.batterySoc,
+          batteryCell: saved.batteryCell,
           switchClosed: saved.switchClosed,
           fourthGenUuid: saved.fourthGenUuid,
           fourthGenName: saved.fourthGenName,

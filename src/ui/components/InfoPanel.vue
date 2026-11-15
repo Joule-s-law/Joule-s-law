@@ -62,6 +62,13 @@
       <div v-if="info.isBattery" class="extra">
         <div class="row"><span>状态</span><span>{{ batteryState }}</span></div>
         <div class="row"><span>电量</span><span>{{ (info.stateOfCharge * 100).toFixed(1) }}%</span></div>
+        <template v-if="info.batteryConfig !== null">
+          <div class="row"><span>电极材料</span><span>{{ info.batteryConfig.negativeName }} / {{ info.batteryConfig.positiveName }}</span></div>
+          <div class="row"><span>电解质</span><span>{{ info.batteryConfig.electrolyteName }}</span></div>
+          <div class="row"><span>离子</span><span>{{ info.batteryConfig.cationName }} / {{ info.batteryConfig.anionName }}</span></div>
+          <div class="row"><span>交换膜</span><span>{{ membraneName(info.batteryConfig.membrane) }}</span></div>
+          <button class="action" @click="game.randomizeBattery()">重新随机生成配置</button>
+        </template>
       </div>
 
       <div v-if="info.isMagneticSensor" class="extra">
@@ -142,6 +149,12 @@ function formatVoltage(value: number): string {
 
 function materialName(id: string): string {
   return WIRE_MATERIALS.get(id)?.displayName ?? id
+}
+
+function membraneName(membrane: string): string {
+  if (membrane === 'cation') return '阳离子交换膜'
+  if (membrane === 'anion') return '阴离子交换膜'
+  return '无'
 }
 </script>
 
