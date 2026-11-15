@@ -3,7 +3,8 @@ import type { ComponentDefinition } from '../../ComponentDefinition'
 export const AMMETER: ComponentDefinition = {
   id: 'ammeter',
   displayName: '电流表',
-  description: '测量仪器：串联接入电路，内阻仅 0.05Ω，本体显示流过的电流。电流表由安培与伏特共同改进，1860 年前后成为实验室标准仪表。测量时必须串联，直接并联会造成短路。',
+  description: '测量仪器：串联接入电路，内阻仅 0.05Ω，本体显示流过的电流。测量时必须串联，直接并联会造成短路。',
+  loreDescription: '电流表由安培与伏特共同改进，1860 年前后成为实验室标准仪表。',
   price: 80,
   priceScaling: 1.2,
   portCount: 2,

@@ -266,12 +266,12 @@ export class TechTree {
     return node.baseCost * Math.pow(node.costScaling, targetLevel - 1)
   }
 
-  buy(id: string): boolean {
+  buy(id: string, free = false): boolean {
     const node = this.getNode(id)
     if (node === undefined || !this.canBuy(id)) return false
     const cost = this.getCost(id)
-    if (this.sim.economy.money < cost) return false
-    this.sim.economy.money -= cost
+    if (!free && this.sim.economy.money < cost) return false
+    if (!free) this.sim.economy.money -= cost
     this.levels.set(id, this.getLevel(id) + 1)
     this.recompute()
     return true

@@ -28,6 +28,7 @@ export interface ComponentInfo {
   displayName: string
   defId: string
   description: string
+  loreDescription: string | null
   labels: string[]
   current: number
   voltage: number
@@ -176,6 +177,7 @@ export const useGameStore = defineStore('game', () => {
       displayName: component.def.displayName,
       defId: component.def.id,
       description: component.def.description,
+      loreDescription: component.def.loreDescription ?? null,
       labels: component.def.labels ?? [],
       current: component.current,
       voltage: component.voltage,
@@ -233,7 +235,7 @@ export const useGameStore = defineStore('game', () => {
     const items: { def: ComponentDefinition; price: number; unlocked: boolean }[] = []
     for (const def of COMPONENT_DEFS.values()) {
       if (def.id === 'wire') continue
-      items.push({ def, price: sim.getComponentPrice(def), unlocked: techTree.isComponentUnlocked(def.id) })
+      items.push({ def, price: settings.freePurchases ? 0 : sim.getComponentPrice(def), unlocked: techTree.isComponentUnlocked(def.id) })
     }
     return items
   }
@@ -252,7 +254,7 @@ export const useGameStore = defineStore('game', () => {
         maxLevel: node.maxLevel,
         cost: techTree.getCost(node.id),
         unlocked: techTree.isUnlocked(node.id),
-        canBuy: techTree.canBuy(node.id) && techTree.getCost(node.id) <= sim.economy.money,
+        canBuy: techTree.canBuy(node.id) && (settings.freePurchases || techTree.getCost(node.id) <= sim.economy.money),
         parentName: parent?.displayName ?? null,
         x: layout.x,
         y: layout.y,
@@ -316,9 +318,14 @@ export const useGameStore = defineStore('game', () => {
   }
 
   function buyTechLevel(id: string): void {
-    techTree.buy(id)
+    techTree.buy(id, settings.freePurchases)
     techVersion.value++
     unlockedComponentsVersion.value++
+    refreshSnapshot()
+  }
+
+  function addMoney(amount: number): void {
+    sim.economy.money += amount
     refreshSnapshot()
   }
 
@@ -387,7 +394,7 @@ export const useGameStore = defineStore('game', () => {
     }
     const def = COMPONENT_DEFS.get('chain_drive')
     if (def === undefined) return
-    const price = sim.getComponentPrice(def)
+    const price = settings.freePurchases ? 0 : sim.getComponentPrice(def)
     if (sim.economy.money < price) {
       showToast('资金不足')
       return
@@ -396,7 +403,8 @@ export const useGameStore = defineStore('game', () => {
       showToast('链条不能与其他链条交叉')
       return
     }
-    sim.economy.money -= price
+    const chainPrice = settings.freePurchases ? 0 : price
+    sim.economy.money -= chainPrice
     sim.registerPurchase(def)
     sim.addComponent(new ChainDriveComponent(def, first, component))
     chainPlacing.value = false
@@ -413,7 +421,7 @@ export const useGameStore = defineStore('game', () => {
     if (!techTree.isComponentUnlocked('chain_drive')) return
     const def = COMPONENT_DEFS.get('chain_drive')
     if (def === undefined) return
-    if (sim.economy.money < sim.getComponentPrice(def)) return
+    if (!settings.freePurchases && sim.economy.money < sim.getComponentPrice(def)) return
     chainPlacing.value = true
     chainFirstGear.value = null
     selectComponentForChain()
@@ -489,7 +497,7 @@ export const useGameStore = defineStore('game', () => {
       cellX = free.x
       cellY = free.y
     }
-    const price = sim.getComponentPrice(def)
+    const price = settings.freePurchases ? 0 : sim.getComponentPrice(def)
     if (sim.economy.money < price) return
     sim.economy.money -= price
     sim.registerPurchase(def)
@@ -514,7 +522,7 @@ export const useGameStore = defineStore('game', () => {
     }
     const def = COMPONENT_DEFS.get(defId)
     if (def === undefined || !techTree.isComponentUnlocked(defId)) return
-    if (sim.economy.money < sim.getComponentPrice(def)) return
+    if (!settings.freePurchases && sim.economy.money < sim.getComponentPrice(def)) return
     dragPlace.value = { defId, cellX: -1, cellY: -1 }
   }
 
@@ -611,11 +619,12 @@ export const useGameStore = defineStore('game', () => {
     const portA = pending.owner.getPort(pending.portIndex)
     const portB = component.getPort(portIndex)
     const length = wireDistance(portA, portB)
-    if (sim.economy.money < WIRE.price) {
+    const wirePrice = settings.freePurchases ? 0 : WIRE.price
+    if (sim.economy.money < wirePrice) {
       wirePendingPort.value = null
       return
     }
-    sim.economy.money -= WIRE.price
+    sim.economy.money -= wirePrice
     sim.registerPurchase(WIRE)
     const anchorA = portPosition(portA.owner, portA.index)
     const anchorB = portPosition(portB.owner, portB.index)
@@ -780,6 +789,7 @@ export const useGameStore = defineStore('game', () => {
     toggleSwitch,
     toggleMonitor,
     randomizeBattery,
+    addMoney,
     renameFourthGenerator,
     applyWsUrl,
     unlockedWireMaterials,

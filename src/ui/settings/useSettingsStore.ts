@@ -81,6 +81,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const prefixFlux = ref<MetricPrefix>((persisted['prefixFlux'] as MetricPrefix) ?? 'none')
   const prefixFluxDensity = ref<MetricPrefix>((persisted['prefixFluxDensity'] as MetricPrefix) ?? 'none')
   const showFieldLines = ref(persisted['showFieldLines'] !== false)
+  const debugVisible = ref(false)
+  const freePurchases = ref(false)
 
   watch(
     [wsUrl, angularUnit, prefixCurrent, prefixVoltage, prefixResistance, prefixFlux, prefixFluxDensity, showFieldLines],
@@ -114,5 +116,7 @@ export const useSettingsStore = defineStore('settings', () => {
     prefixFlux,
     prefixFluxDensity,
     showFieldLines,
+    debugVisible,
+    freePurchases,
   }
 })

@@ -9,6 +9,7 @@
         </div>
       </div>
       <p class="desc">{{ info.description }}</p>
+      <p v-if="info.loreDescription !== null" class="lore">{{ info.loreDescription }}</p>
       <div class="row"><span>电流</span><span :class="{ danger: currentRatio > 1 }">{{ formatCurrent(info.current) }}</span></div>
       <div class="row"><span>电压</span><span>{{ info.voltage >= 0 ? '' : '-' }}{{ formatVoltage(info.voltage) }}</span></div>
       <div class="row"><span>当前电阻</span><span>{{ formatResistance(info.resistance) }}</span></div>
@@ -198,6 +199,16 @@ function membraneName(membrane: string): string {
   border-radius: 6px;
   padding: 8px;
   margin: 0;
+}
+.lore {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #6b7a88;
+  background: #1b2230;
+  border: 1px solid #232c3a;
+  border-radius: 6px;
+  padding: 8px;
+  margin: -4px 0 0 0;
 }
 .row {
   display: flex;

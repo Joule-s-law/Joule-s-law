@@ -22,12 +22,20 @@
         <span>显示磁感线</span>
         <input type="checkbox" v-model="s.showFieldLines" />
       </label>
+      <template v-if="s.debugVisible">
+        <div class="debug-header">调试模式（按 P 切换显示）</div>
+        <button class="debug-btn" @click="game.addMoney(1000)">+1000 钱</button>
+        <label class="row checkbox-row">
+          <span>购买/升级免费</span>
+          <input type="checkbox" v-model="s.freePurchases" />
+        </label>
+      </template>
     </template>
   </section>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useGameStore } from '../stores/useGameStore'
 import {
   useSettingsStore,
@@ -39,6 +47,12 @@ import {
 const game = useGameStore()
 const s = useSettingsStore()
 const open = ref(false)
+
+function handleKey(event: KeyboardEvent): void {
+  if (event.code === 'KeyP') s.debugVisible = !s.debugVisible
+}
+onMounted(() => window.addEventListener('keydown', handleKey))
+onUnmounted(() => window.removeEventListener('keydown', handleKey))
 
 const PREFIX_IDS: MetricPrefix[] = ['k', 'none', 'm', 'u', 'n']
 
@@ -102,5 +116,19 @@ const QUANTITIES: Array<{ key: 'prefixCurrent' | 'prefixVoltage' | 'prefixResist
 }
 .checkbox-row input {
   accent-color: #4fc3f7;
+}
+.debug-header {
+  font-size: 11px;
+  color: #ffab40;
+}
+.debug-btn {
+  align-self: flex-start;
+  padding: 4px 10px;
+  background: #ffab40;
+  color: #10141b;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
 }
 </style>
