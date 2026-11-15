@@ -87,13 +87,12 @@ const TECH_LIST: TechNode[] = [
   {
     id: 'curie',
     displayName: '居里',
-    description: '放射性化学：解锁电解池；化学能资金倍率 +0.5/级。',
+    description: '放射性化学：化学能资金倍率 +0.5/级。',
     parentId: 'physics_must_3',
     maxLevel: 3,
     baseCost: 150,
     costScaling: 1.8,
     effects: [
-      { kind: 'unlockComponents', perLevel: 0, minLevel: 1, target: 'electrolysis_cell' },
       { kind: 'incomeMultiplier', target: EnergyType.CHEMICAL, perLevel: 0.5 },
     ],
   },

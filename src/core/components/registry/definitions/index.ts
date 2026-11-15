@@ -5,7 +5,6 @@ import { WIRE } from './wire'
 import { FUSE } from './fuse'
 import { SWITCH } from './switch'
 import { LAMP } from './lamp'
-import { ELECTROLYSIS_CELL } from './electrolysis_cell'
 import { BUZZER } from './buzzer'
 import { BATTERY_PACK } from './battery_pack'
 import { MOTOR } from './motor'
@@ -34,7 +33,6 @@ export const ALL_DEFS: ComponentDefinition[] = [
   SWITCH,
   DIODE,
   LAMP,
-  ELECTROLYSIS_CELL,
   BUZZER,
   BATTERY_PACK,
   MOTOR,
@@ -64,7 +62,6 @@ const COMPONENT_LABELS: Record<string, string[]> = {
   switch: ['通断'],
   diode: ['半导体'],
   lamp: ['焦耳热', '热辐射'],
-  electrolysis_cell: ['电化学'],
   buzzer: ['声波', '电磁感应'],
   battery_pack: ['电化学'],
   motor: ['磁场力', '机械传动'],
@@ -98,7 +95,6 @@ export {
   SWITCH,
   DIODE,
   LAMP,
-  ELECTROLYSIS_CELL,
   BUZZER,
   BATTERY_PACK,
   MOTOR,

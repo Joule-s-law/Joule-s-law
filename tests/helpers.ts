@@ -5,12 +5,12 @@ import {
   WIRE,
   SWITCH,
   LAMP,
-  ELECTROLYSIS_CELL,
   PHOTOCELL,
   MOTOR,
   TURBINE,
   SECONDARY_BATTERY,
 } from '../src/core/components/registry/definitions'
+import type { ComponentDefinition } from '../src/core/components/ComponentDefinition'
 import { createComponent } from '../src/core/components/registry/componentRegistry'
 import { VoltageSourceComponent } from '../src/core/components/behaviors/VoltageSourceComponent'
 import { ResistiveComponent } from '../src/core/components/behaviors/ResistiveComponent'
@@ -169,7 +169,19 @@ function isTurbine(c: unknown): c is TurbineComponent {
 
 export function buildConverterLoop(defId: string): { sim: Simulation; source: VoltageSourceComponent; converter: ConverterComponent } {
   const sim = new Simulation()
-  const def = { ...ELECTROLYSIS_CELL, id: defId }
+  const def: ComponentDefinition = {
+    id: defId,
+    displayName: 'TestConverter',
+    description: '',
+    price: 120,
+    priceScaling: 1.1,
+    portCount: 2,
+    resistance: 15,
+    ratedCurrent: 3,
+    behaviorId: 'converter',
+    behaviorParams: { efficiency: 0.8 },
+    behaviorTags: { outputMode: 'income', outputForm: 'chemical' },
+  }
   const source = expectType(createComponent(HAND_CRANK), isVoltageSource, 'expected voltage source')
   const converter = expectType(createComponent(def), isConverter, 'expected converter')
   source.rotationSpeed = Math.PI * 2

@@ -44,7 +44,7 @@ describe('Converters and systems', () => {
     expect(reversed.battery.stateOfCharge).toBeLessThan(1)
   })
 
-  it('electrolysis pays chemical income', () => {
+  it('converter pays chemical income', () => {
     const { sim } = buildConverterLoop('test_chem')
     sim.economy.setMultiplier(EnergyType.CHEMICAL, 2)
     sim.tick()
