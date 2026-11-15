@@ -17,8 +17,10 @@ import { ChainDriveComponent, gearCenter } from '../../core/components/behaviors
 import { FourthWallClient } from '../../net/FourthWallClient'
 import { useSettingsStore } from '../settings/useSettingsStore'
 import { WIRE } from '../../core/components/registry/definitions'
-import { WIRE_MATERIALS } from '../../core/components/registry/wireMaterials'
+import { WIRE_MATERIALS, getWireMaterial, DEFAULT_WIRE_MATERIAL_ID } from '../../core/components/registry/wireMaterials'
 import { CELL_SIZE, GRID_COLS, GRID_ROWS, portPosition, wireDistance } from '../board/boardMath'
+
+const WIRE_MATERIAL_PREF_KEY = 'joules-law-wire-material'
 
 const SELL_REFUND_RATIO = 0.5
 const TECH_LAYOUT_KEY = 'joules-law-tech-layout'
@@ -124,6 +126,13 @@ export const useGameStore = defineStore('game', () => {
     }
   })
   let lastGeneratorSync = ''
+  const preferredWireMaterial = ref(readPreferredWireMaterial())
+
+  function readPreferredWireMaterial(): string {
+    const raw = localStorage.getItem(WIRE_MATERIAL_PREF_KEY)
+    if (raw !== null && WIRE_MATERIALS.has(raw)) return raw
+    return DEFAULT_WIRE_MATERIAL_ID
+  }
 
   function syncFourthGenerators(): void {
     if (!techTree.isComponentUnlocked('fourth_generator')) return
@@ -635,7 +644,8 @@ export const useGameStore = defineStore('game', () => {
     const portA = pending.owner.getPort(pending.portIndex)
     const portB = component.getPort(portIndex)
     const length = wireDistance(portA, portB)
-    const wirePrice = settings.freePurchases ? 0 : WIRE.price
+    const materialId = preferredWireMaterial.value
+    const wirePrice = settings.freePurchases ? 0 : getWireMaterial(materialId).price
     if (sim.economy.money < wirePrice) {
       wirePendingPort.value = null
       return
@@ -645,6 +655,7 @@ export const useGameStore = defineStore('game', () => {
     const anchorA = portPosition(portA.owner, portA.index)
     const anchorB = portPosition(portB.owner, portB.index)
     const wire = createComponentById('wire', {
+      wireMaterialId: materialId,
       wireLength: length,
       wireAnchorA: { x: anchorA.px, y: anchorA.py },
       wireAnchorB: { x: anchorB.px, y: anchorB.py },
@@ -671,7 +682,7 @@ export const useGameStore = defineStore('game', () => {
     }
     for (const wire of wires) {
       sim.removeComponent(wire)
-      sim.economy.money += wire.def.price * SELL_REFUND_RATIO
+      sim.economy.money += getWireMaterial(wire.getMaterialId()).price * SELL_REFUND_RATIO
       sim.unregisterPurchase(wire.def)
     }
     const chain = sim.chainByGear.get(component)
@@ -699,6 +710,8 @@ export const useGameStore = defineStore('game', () => {
     if (!(selected instanceof WireComponent)) return
     if (!techTree.isWireMaterialUnlocked(materialId)) return
     selected.setMaterialId(materialId)
+    preferredWireMaterial.value = materialId
+    localStorage.setItem(WIRE_MATERIAL_PREF_KEY, materialId)
     refreshSnapshot()
   }
 

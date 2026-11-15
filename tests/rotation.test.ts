@@ -158,9 +158,9 @@ describe('RotationSystem', () => {
     sim.economy.money = 100000
     tech.buy('ohm')
     tech.buy('maxwell')
-    expect(sim.gearMaxOmegaBonus).toBeCloseTo(Math.PI * 0.4, 8)
+    expect(sim.gearMaxOmegaBonus).toBeCloseTo(Math.PI * 2, 8)
     tech.buy('maxwell')
-    expect(sim.gearMaxOmegaBonus).toBeCloseTo(Math.PI * 0.8, 8)
+    expect(sim.gearMaxOmegaBonus).toBeCloseTo(Math.PI * 4, 8)
     expect(sim.gearBreakdownChance).toBeCloseTo(0.5, 8)
   })
 

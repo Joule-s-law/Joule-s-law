@@ -36,7 +36,7 @@ export interface TechNode {
 }
 
 export const BASE_UNLOCKED_COMPONENTS: string[] = ['hand_crank', 'resistor', 'wire', 'fuse', 'switch', 'diode', 'gear_group', 'big_gear', 'chain_drive']
-const BASE_WIRE_MATERIALS: string[] = ['copper']
+const BASE_WIRE_MATERIALS: string[] = ['platinum']
 const ROOT_INITIAL_LEVEL = 1
 
 const TECH_LIST: TechNode[] = [
@@ -199,14 +199,26 @@ const TECH_LIST: TechNode[] = [
 		id: 'onnes',
 		displayName: '昂内斯',
 		bio: '海克·卡末林·昂内斯（1853–1926），荷兰物理学家。1908 年首次液化氦气，1911 年借此发现超导现象，1913 年获诺贝尔物理学奖。',
-		levelEffect: (n) => (n === 5 ? '解锁银导线' : n === 10 ? '解锁超导体' : '本级无新增效果'),
+		levelEffect: (n) =>
+			n === 1
+				? '解锁铁导线'
+				: n === 2
+					? '解锁钨导线'
+					: n === 3
+						? '解锁铜导线'
+						: n === 4
+							? '解锁银导线'
+							: '解锁超导体',
 		parentId: 'ohm',
-		maxLevel: 10,
-		baseCost: 1.16,
-		costScaling: 2.2,
+		maxLevel: 5,
+		baseCost: 60,
+		costScaling: 4,
 		effects: [
-			{ kind: 'unlockWireMaterial', target: 'silver', perLevel: 0, minLevel: 5 },
-			{ kind: 'unlockWireMaterial', target: 'superconductor', perLevel: 0, minLevel: 10 },
+			{ kind: 'unlockWireMaterial', target: 'iron', perLevel: 0, minLevel: 1 },
+			{ kind: 'unlockWireMaterial', target: 'tungsten', perLevel: 0, minLevel: 2 },
+			{ kind: 'unlockWireMaterial', target: 'copper', perLevel: 0, minLevel: 3 },
+			{ kind: 'unlockWireMaterial', target: 'silver', perLevel: 0, minLevel: 4 },
+			{ kind: 'unlockWireMaterial', target: 'superconductor', perLevel: 0, minLevel: 5 },
 		],
 	},
 	{

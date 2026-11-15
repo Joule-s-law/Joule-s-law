@@ -31,7 +31,7 @@
             :class="{ active: materialId === info.wireMaterialId }"
             @click="game.setWireMaterial(materialId)"
           >
-            {{ materialName(materialId) }}
+            {{ materialName(materialId) }} ¥{{ WIRE_MATERIALS.get(materialId)?.price }}
           </button>
         </div>
         <div class="row"><span>颜色</span></div>

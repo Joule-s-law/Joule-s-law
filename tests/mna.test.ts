@@ -85,7 +85,7 @@ describe('MNASolver', () => {
   it('copper wire adds negligible series resistance', () => {
     const { sim, load } = buildSeriesLoop('copper')
     sim.tick()
-    const expected = 10 / (13 + 1e-8)
+    const expected = 10 / (13 + 1.68e-8)
     expect(load.current).toBeCloseTo(expected, 9)
   })
 
