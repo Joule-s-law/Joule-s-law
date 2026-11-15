@@ -9,6 +9,7 @@ const TWO_PI = Math.PI * 2
 export class GearComponent extends BaseComponent {
   readonly gearRatio: number
   private readonly maxOmega: number
+  overSpeed = false
 
   constructor(def: ComponentDefinition) {
     super(def)
@@ -23,7 +24,8 @@ export class GearComponent extends BaseComponent {
   buildCircuitModel(_model: MnaModel): void {}
 
   onTick(ctx: TickContext): void {
-    if (Math.abs(this.rotationSpeed) <= this.maxOmega) return
+    this.overSpeed = Math.abs(this.rotationSpeed) > this.maxOmega
+    if (!this.overSpeed) return
     const chance = ctx.host.gearBreakdownChance * ctx.dt
     if (chance > 0 && Math.random() < chance) {
       ctx.host.requestDestroy(this)

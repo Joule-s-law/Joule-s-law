@@ -33,7 +33,7 @@ export const PREFIX_NAMES: Record<MetricPrefix, string> = {
 
 export const ANGULAR_UNITS: Array<{ id: AngularUnit; name: string; factor: number; symbol: string }> = [
   { id: 'deg', name: '度每秒', factor: 180 / Math.PI, symbol: '°/s' },
-  { id: 'rad', name: '弧度每秒', factor: 1, symbol: 'rad/s' },
+  { id: 'rad', name: '弧度每秒', factor: 1 / Math.PI, symbol: 'π/s' },
   { id: 'rev', name: '转每秒', factor: 1 / (Math.PI * 2), symbol: 'r/s' },
 ]
 

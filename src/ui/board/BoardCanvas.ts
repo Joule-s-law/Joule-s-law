@@ -3,6 +3,7 @@ import { WireComponent } from '../../core/components/behaviors/WireComponent'
 import { ChainDriveComponent } from '../../core/components/behaviors/ChainDriveComponent'
 import { BatteryComponent } from '../../core/components/behaviors/BatteryComponent'
 import { SwitchComponent } from '../../core/components/behaviors/SwitchComponent'
+import { GearComponent } from '../../core/components/behaviors/GearComponent'
 import { RheostatComponent } from '../../core/components/behaviors/RheostatComponent'
 import { FourthGeneratorComponent } from '../../core/components/behaviors/FourthGeneratorComponent'
 import { VoltageTransformerComponent } from '../../core/components/behaviors/VoltageTransformerComponent'
@@ -647,7 +648,7 @@ export class BoardCanvas {
           ctx.arc(particle.x, particle.y, (radius + 3.5) * 2, 0, Math.PI * 2)
           ctx.stroke()
         } else {
-          const s = 8
+          const s = 16
           ctx.beginPath()
           ctx.moveTo(particle.x - s, particle.y - s)
           ctx.lineTo(particle.x + s, particle.y + s)
@@ -1308,6 +1309,13 @@ export class BoardCanvas {
     const tipRadius = radius + 3
     const rootRadius = radius - 5
     const toothHalf = (Math.PI / teeth) * 0.42
+    if (component instanceof GearComponent && component.overSpeed) {
+      ctx.save()
+      ctx.globalAlpha = Math.max(0, 0.45 + Math.sin(this.time * 8) * 0.4)
+      ctx.fillStyle = '#e74c3c'
+      ctx.fillRect(x, y, w, h)
+      ctx.restore()
+    }
     ctx.fillStyle = '#4d5a64'
     ctx.beginPath()
     ctx.arc(cx, cy, rootRadius, 0, Math.PI * 2)
