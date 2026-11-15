@@ -55,14 +55,14 @@ const TECH_LIST: TechNode[] = [
 		id: 'higgs',
 		displayName: '希格斯',
 		bio: '彼得·希格斯（1929–2024），英国理论物理学家。1964 年预言希格斯玻色子，赋予基本粒子以质量；2012 年该粒子在 LHC 被证实，次年获诺贝尔物理学奖。',
-		levelEffect: () => '点击产热 +1J，点击冷却 ×75%',
+		levelEffect: () => '点击产热 +1J，点击冷却 ×90%',
 		parentId: 'physics_must_3',
 		maxLevel: 10,
 		baseCost: 1.63,
 		costScaling: 1.8,
 		effects: [
 			{ kind: 'clickHeat', perLevel: 1 },
-			{ kind: 'clickCooldownFactor', perLevel: 0.75 },
+			{ kind: 'clickCooldownFactor', perLevel: 0.9 },
 		],
 	},
 	{
