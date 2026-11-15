@@ -274,29 +274,40 @@ export const useGameStore = defineStore('game', () => {
     return infos
   }
 
-  const defaultNodeRows = new Map<string, number>()
-  function defaultNodePosition(node: TechNode): { x: number; y: number } {
+  function nodeDepth(node: TechNode): number {
     let depth = 0
     let cursor: string | null = node.parentId
     while (cursor !== null) {
       depth++
       cursor = TECH_NODES.find((n) => n.id === cursor)?.parentId ?? null
     }
-    const siblings = TECH_NODES.filter((n) => n.parentId === node.parentId)
-    const rowIndex = defaultNodeRows.get(node.id) ?? siblings.indexOf(node)
-    defaultNodeRows.set(node.id, rowIndex)
-    return { x: 80 + depth * 260, y: 80 + rowIndex * 130 }
+    return depth
+  }
+
+  function defaultNodePosition(node: TechNode): { x: number; y: number } {
+    const depth = nodeDepth(node)
+    const sameDepth = TECH_NODES.filter((n) => nodeDepth(n) === depth)
+    return { x: 80 + depth * 260, y: 80 + sameDepth.indexOf(node) * 130 }
   }
 
   const techLayout = loadTechLayout()
 
   function loadTechLayout(): { positions: Record<string, { x: number; y: number }>; view: { x: number; y: number } } {
+    const empty = { positions: {}, view: { x: 0, y: 0 } }
     try {
       const raw = localStorage.getItem(TECH_LAYOUT_KEY)
-      if (raw !== null) return JSON.parse(raw) as { positions: Record<string, { x: number; y: number }>; view: { x: number; y: number } }
+      if (raw === null) return empty
+      const layout = JSON.parse(raw) as { positions: Record<string, { x: number; y: number }>; view: { x: number; y: number } }
+      const seen = new Set<string>()
+      for (const [id, pos] of Object.entries(layout.positions)) {
+        const key = `${Math.round(pos.x)},${Math.round(pos.y)}`
+        if (seen.has(key)) delete layout.positions[id]
+        else seen.add(key)
+      }
+      return layout
     } catch {
+      return empty
     }
-    return { positions: {}, view: { x: 0, y: 0 } }
   }
 
   function saveTechLayout(): void {
