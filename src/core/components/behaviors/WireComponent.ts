@@ -16,8 +16,8 @@ export class WireComponent extends BaseComponent {
   private materialId: string
   private anchorA: WireAnchor
   private anchorB: WireAnchor
-  private controlPointA: WireAnchor
-  private controlPointB: WireAnchor
+  private controlOffsetA: WireAnchor
+  private controlOffsetB: WireAnchor
   visualColor: string | null = null
 
   getVisualColor(): string {
@@ -46,12 +46,12 @@ export class WireComponent extends BaseComponent {
       this.anchorA = { x: this.x * CELL_SIZE, y: this.y * CELL_SIZE + CELL_SIZE / 2 }
       this.anchorB = { x: this.anchorA.x + length * CELL_SIZE, y: this.anchorA.y }
     }
-    this.controlPointA = options?.controlPointA !== undefined
-      ? { ...options.controlPointA }
-      : this.defaultControlPointA()
-    this.controlPointB = options?.controlPointB !== undefined
-      ? { ...options.controlPointB }
-      : this.defaultControlPointB()
+    this.controlOffsetA = options?.controlPointA !== undefined
+      ? { x: options.controlPointA.x - this.anchorA.x, y: options.controlPointA.y - this.anchorA.y }
+      : this.defaultControlOffsetA()
+    this.controlOffsetB = options?.controlPointB !== undefined
+      ? { x: options.controlPointB.x - this.anchorB.x, y: options.controlPointB.y - this.anchorB.y }
+      : this.defaultControlOffsetB()
     this.syncCellPosition()
   }
 
@@ -75,12 +75,15 @@ export class WireComponent extends BaseComponent {
   }
 
   getControlPoints(): { a: WireAnchor; b: WireAnchor } {
-    return { a: { ...this.controlPointA }, b: { ...this.controlPointB } }
+    return {
+      a: { x: this.anchorA.x + this.controlOffsetA.x, y: this.anchorA.y + this.controlOffsetA.y },
+      b: { x: this.anchorB.x + this.controlOffsetB.x, y: this.anchorB.y + this.controlOffsetB.y },
+    }
   }
 
   setControlPoints(a: WireAnchor, b: WireAnchor): void {
-    this.controlPointA = { ...a }
-    this.controlPointB = { ...b }
+    this.controlOffsetA = { x: a.x - this.anchorA.x, y: a.y - this.anchorA.y }
+    this.controlOffsetB = { x: b.x - this.anchorB.x, y: b.y - this.anchorB.y }
   }
 
   getLengthCells(): number {
@@ -99,12 +102,12 @@ export class WireComponent extends BaseComponent {
 
   onTick(_ctx: TickContext): void {}
 
-  private defaultControlPointA(): WireAnchor {
-    return { x: this.anchorA.x + (this.anchorB.x - this.anchorA.x) * 0.45, y: this.anchorA.y }
+  private defaultControlOffsetA(): WireAnchor {
+    return { x: (this.anchorB.x - this.anchorA.x) * 0.45, y: 0 }
   }
 
-  private defaultControlPointB(): WireAnchor {
-    return { x: this.anchorB.x - (this.anchorB.x - this.anchorA.x) * 0.45, y: this.anchorB.y }
+  private defaultControlOffsetB(): WireAnchor {
+    return { x: -(this.anchorB.x - this.anchorA.x) * 0.45, y: 0 }
   }
 
   private syncCellPosition(): void {
