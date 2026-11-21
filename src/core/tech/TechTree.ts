@@ -141,7 +141,7 @@ const TECH_LIST: TechNode[] = [
 		baseCost: 2.74,
 		costScaling: 2,
 		effects: [
-			{ kind: 'unlockComponents', perLevel: 0, target: 'motor,steam_engine,turbine,pipe,tank,condenser,water_pump' },
+			{ kind: 'unlockComponents', perLevel: 0, target: 'motor,steam_engine,turbine,pipe,tank,condenser,water_pump,turbine_rotor' },
 			{ kind: 'efficiencyBoost', perLevel: 0.01 },
 		],
 	},

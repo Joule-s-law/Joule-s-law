@@ -18,6 +18,7 @@ import { TankComponent } from '../../core/components/behaviors/TankComponent'
 import { TurbineComponent } from '../../core/components/behaviors/TurbineComponent'
 import { FissionReactorComponent } from '../../core/components/behaviors/FissionReactorComponent'
 import { WaterPumpComponent } from '../../core/components/behaviors/WaterPumpComponent'
+import { TurbineRotorComponent } from '../../core/components/behaviors/TurbineRotorComponent'
 import { ElectronGunComponent } from '../../core/components/behaviors/ElectronGunComponent'
 import { PhotonScreenComponent } from '../../core/components/behaviors/PhotonScreenComponent'
 import type { PhotonPropagation } from '../../core/components/behaviors/PhotonScreenComponent'
@@ -81,6 +82,9 @@ export interface ComponentInfo {
   isWaterPump: boolean
   pumpPower: number
   pumpOnWater: boolean
+  isTurbineRotor: boolean
+  rotorFlow: number
+  rotorEmf: number
   isElectronGun: boolean
   aimAngle: number
   launchSpeed: number
@@ -264,6 +268,9 @@ export const useGameStore = defineStore('game', () => {
       isWaterPump: component instanceof WaterPumpComponent,
       pumpPower: component instanceof WaterPumpComponent ? component.current * component.current * component.getResistance() : 0,
       pumpOnWater: component instanceof WaterPumpComponent ? component.onWater : false,
+      isTurbineRotor: component instanceof TurbineRotorComponent,
+      rotorFlow: component instanceof TurbineRotorComponent ? component.flowRate : 0,
+      rotorEmf: component instanceof TurbineRotorComponent ? component.emf : 0,
       isElectronGun: component instanceof ElectronGunComponent,
       aimAngle: component instanceof ElectronGunComponent ? component.aimAngle : 0,
       launchSpeed: component instanceof ElectronGunComponent ? component.launchSpeed : 0,

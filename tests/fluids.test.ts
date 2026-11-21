@@ -8,6 +8,7 @@ import { TurbineComponent } from '../src/core/components/behaviors/TurbineCompon
 import { TankComponent } from '../src/core/components/behaviors/TankComponent'
 import { FissionReactorComponent } from '../src/core/components/behaviors/FissionReactorComponent'
 import { WaterPumpComponent } from '../src/core/components/behaviors/WaterPumpComponent'
+import { TurbineRotorComponent } from '../src/core/components/behaviors/TurbineRotorComponent'
 import { terrainTypeAt } from '../src/core/world/terrain'
 import { ResistiveComponent } from '../src/core/components/behaviors/ResistiveComponent'
 
@@ -160,6 +161,27 @@ describe('fluids', () => {
     pump.y = landY
     expect(pump.onWater).toBe(false)
     expect(pump.provideFluid(100)).toBeNull()
+  })
+
+  it('turbine rotor converts steam flow into emf with no upper limit', () => {
+    const sim = new Simulation()
+    const rotor = createComponentById('turbine_rotor') as TurbineRotorComponent
+    rotor.x = 0
+    rotor.y = 0
+    sim.addComponent(rotor)
+    const steamPipe = addPipe(sim, 5, 2)
+    for (let i = 0; i < 20; i++) {
+      sim.pipeSystem.pushFluid(steamPipe, 'steam', 5)
+      sim.tick()
+    }
+    expect(rotor.flowRate).toBeGreaterThan(1)
+    expect(rotor.emf).toBeGreaterThan(0)
+    const emfLow = rotor.emf
+    for (let i = 0; i < 20; i++) {
+      sim.pipeSystem.pushFluid(steamPipe, 'steam', 10)
+      sim.tick()
+    }
+    expect(rotor.emf).toBeGreaterThan(emfLow * 1.5)
   })
 
   it('steam engine pushes steam through pipes and turbine converts it to emf', () => {

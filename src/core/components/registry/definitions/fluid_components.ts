@@ -68,6 +68,23 @@ export const WATER_PUMP: ComponentDefinition = {
   height: 1,
 }
 
+export const TURBINE_ROTOR: ComponentDefinition = {
+  id: 'turbine_rotor',
+  displayName: '涡轮转子',
+  description: '5×5 大型涡轮：四周全部是蒸汽输入口，持续吸入蒸汽发电。蒸汽流量越大输出电动势越高，且没有上限——把尽可能多的蒸汽灌进它吧。内置 1Ω 内阻。',
+  loreDescription: '现代汽轮机的转子每分钟旋转 3000 圈，一片叶片承受的离心力相当于一辆卡车。西屋与帕森斯把蒸汽的热能直接变成了旋转的电磁场——今天全球八成的电力依然由此产生。',
+  price: 5000,
+  priceScaling: 1.2,
+  portCount: 2,
+  resistance: 1,
+  ratedCurrent: 100,
+  behaviorId: 'turbineRotor',
+  behaviorParams: { intakeMax: 1000, emfPerFlow: 2, internalResistance: 1 },
+  behaviorTags: {},
+  width: 5,
+  height: 5,
+}
+
 export const FISSION_REACTOR: ComponentDefinition = {
   id: 'fission_reactor',
   displayName: '裂变反应堆',

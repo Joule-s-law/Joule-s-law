@@ -179,6 +179,11 @@
         <div class="row"><span>出水上限</span><span>{{ Math.min(10, info.pumpPower * 0.4).toFixed(1) }} /s</span></div>
       </div>
 
+      <div v-if="info.isTurbineRotor" class="extra">
+        <div class="row"><span>蒸汽流量</span><span>{{ info.rotorFlow.toFixed(2) }} /s</span></div>
+        <div class="row"><span>输出电动势</span><span>{{ info.rotorEmf.toFixed(2) }} V（无上限）</span></div>
+      </div>
+
       <button class="action monitor" :class="{ on: info.monitored }" @click="game.toggleMonitor()">
         实时监视：{{ info.monitored ? '开' : '关' }}（按住 Tab 点击元件可快捷切换）
       </button>

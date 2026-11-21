@@ -23,6 +23,7 @@ import { SteamEngineComponent } from '../../core/components/behaviors/SteamEngin
 import { TurbineComponent } from '../../core/components/behaviors/TurbineComponent'
 import { FissionReactorComponent } from '../../core/components/behaviors/FissionReactorComponent'
 import { WaterPumpComponent } from '../../core/components/behaviors/WaterPumpComponent'
+import { TurbineRotorComponent } from '../../core/components/behaviors/TurbineRotorComponent'
 import { MotorComponent } from '../../core/components/behaviors/MotorComponent'
 import { FluidParticle, integrateFluidParticles, fluidReceptors } from './fluidParticles'
 import { terrainChunkCanvas, TERRAIN_CHUNK_CELLS } from './terrainChunks'
@@ -1398,6 +1399,10 @@ export class BoardCanvas {
         this.drawWaterPump(component, selected)
         continue
       }
+      if (component instanceof TurbineRotorComponent) {
+        this.drawTurbineRotor(component, selected)
+        continue
+      }
       if (component instanceof TurbineComponent) {
         this.drawTurbine(component)
         continue
@@ -2041,6 +2046,55 @@ export class BoardCanvas {
     ctx.strokeStyle = selected === pump ? '#f1c40f' : powered ? '#69f0ae' : '#546e7a'
     ctx.lineWidth = 2
     ctx.strokeRect(x + 4, y + 4, CELL_SIZE - 8, CELL_SIZE - 8)
+  }
+
+  private drawTurbineRotor(rotor: TurbineRotorComponent, selected: BaseComponent | null): void {
+    const ctx = this.ctx
+    const cx = (rotor.x + rotor.width / 2) * CELL_SIZE
+    const cy = (rotor.y + rotor.height / 2) * CELL_SIZE
+    const x = rotor.x * CELL_SIZE
+    const y = rotor.y * CELL_SIZE
+    const w = rotor.width * CELL_SIZE
+    const h = rotor.height * CELL_SIZE
+    ctx.fillStyle = '#263238'
+    ctx.fillRect(x + 2, y + 2, w - 4, h - 4)
+    const elapsed = Math.min(0.25, Math.max(0, (performance.now() - rotor.spinAngleAt) / 1000))
+    const angle = rotor.spinAngle + rotor.flowRate * Math.PI * 2 * elapsed
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(angle)
+    for (let ring = 0; ring < 3; ring++) {
+      const r = 18 + ring * 20
+      ctx.strokeStyle = `rgba(144, 202, 249, ${(0.9 - ring * 0.25).toFixed(2)})`
+      ctx.lineWidth = 3
+      for (let i = 0; i < 6; i++) {
+        ctx.rotate(Math.PI / 3)
+        ctx.beginPath()
+        ctx.moveTo(0, 0)
+        ctx.quadraticCurveTo(r * 0.6, -6, r, 0)
+        ctx.stroke()
+      }
+    }
+    ctx.restore()
+    ctx.fillStyle = '#eceff1'
+    ctx.beginPath()
+    ctx.arc(cx, cy, 7, 0, Math.PI * 2)
+    ctx.fill()
+    if (rotor.flowRate > 0.01) {
+      ctx.strokeStyle = '#4fc3f7'
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.arc(cx, cy, w / 2 - 10, 0, Math.PI * 2 * Math.min(1, rotor.flowRate / 50))
+      ctx.stroke()
+    }
+    ctx.strokeStyle = selected === rotor ? '#f1c40f' : '#546e7a'
+    ctx.lineWidth = 2
+    ctx.strokeRect(x + 2, y + 2, w - 4, h - 4)
+    ctx.fillStyle = '#b0bec5'
+    ctx.font = '11px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(`${rotor.emf.toFixed(1)}V`, cx, y + h - 12)
+    ctx.textAlign = 'start'
   }
 
   private drawTurbine(turbine: TurbineComponent): void {
