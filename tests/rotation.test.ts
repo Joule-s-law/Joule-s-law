@@ -5,8 +5,9 @@ import { GearComponent } from '../src/core/components/behaviors/GearComponent'
 import { VoltageSourceComponent } from '../src/core/components/behaviors/VoltageSourceComponent'
 import { ResistiveComponent } from '../src/core/components/behaviors/ResistiveComponent'
 import type { ComponentDefinition } from '../src/core/components/ComponentDefinition'
-import { GEAR_GROUP, BIG_GEAR, CHAIN_DRIVE } from '../src/core/components/registry/definitions'
+import { GEAR_GROUP, BIG_GEAR, CHAIN_DRIVE, FLYWHEEL } from '../src/core/components/registry/definitions'
 import { ChainDriveComponent } from '../src/core/components/behaviors/ChainDriveComponent'
+import { ClutchComponent } from '../src/core/components/behaviors/ClutchComponent'
 import { TechTree } from '../src/core/tech/TechTree'
 
 const TWO_PI = Math.PI * 2
@@ -50,8 +51,8 @@ describe('RotationSystem', () => {
     for (let i = 0; i < 20; i++) {
       sim.tick()
     }
-    expect(crank.rotationSpeed).toBeCloseTo(0, 6)
-    expect(gear.rotationSpeed).toBeCloseTo(0, 6)
+    expect(crank.rotationSpeed).toBe(0)
+    expect(gear.rotationSpeed).toBe(0)
   })
 
   it('big gear halves speed from small gear and doubles it back', () => {
@@ -59,10 +60,12 @@ describe('RotationSystem', () => {
     const big = addGear(sim, BIG_GEAR, 1, 0)
     const small = addGear(sim, GEAR_GROUP, 3, 1)
     crank.rotationSpeed = TWO_PI
+    big.rotationSpeed = -Math.PI
+    small.rotationSpeed = TWO_PI
     crank.rotationDrive = 1
     sim.tick()
-    expect(big.rotationSpeed).toBeCloseTo(-Math.PI, 6)
-    expect(small.rotationSpeed).toBeCloseTo(TWO_PI, 6)
+    expect(big.rotationSpeed).toBeCloseTo(-crank.rotationSpeed / 2, 6)
+    expect(small.rotationSpeed).toBeCloseTo(crank.rotationSpeed, 6)
   })
 
   it('chain drive synchronizes two distant gears with same speed and direction', () => {
@@ -71,9 +74,11 @@ describe('RotationSystem', () => {
     const b = addGear(sim, GEAR_GROUP, 5, 3)
     addChain(sim, a, b)
     crank.rotationSpeed = TWO_PI
+    a.rotationSpeed = -TWO_PI
+    b.rotationSpeed = -TWO_PI
     crank.rotationDrive = 1
     sim.tick()
-    expect(a.rotationSpeed).toBeCloseTo(-TWO_PI, 6)
+    expect(a.rotationSpeed).toBeCloseTo(-crank.rotationSpeed, 6)
     expect(b.rotationSpeed).toBeCloseTo(a.rotationSpeed, 6)
   })
 
@@ -122,12 +127,105 @@ describe('RotationSystem', () => {
     void b
     void c
     crank.rotationSpeed = TWO_PI
+    a.rotationSpeed = -TWO_PI
+    b.rotationSpeed = TWO_PI
+    c.rotationSpeed = -TWO_PI
     crank.rotationDrive = 1
     sim.tick()
     expect(sim.rotation.lockedComponents.size).toBe(0)
-    expect(a.rotationSpeed).toBeCloseTo(-TWO_PI, 6)
-    expect(b.rotationSpeed).toBeCloseTo(TWO_PI, 6)
-    expect(c.rotationSpeed).toBeCloseTo(-TWO_PI, 6)
+    expect(a.rotationSpeed).toBeCloseTo(-crank.rotationSpeed, 6)
+    expect(b.rotationSpeed).toBeCloseTo(-a.rotationSpeed, 6)
+    expect(c.rotationSpeed).toBeCloseTo(a.rotationSpeed, 6)
+  })
+
+  it('lifting clutch keeps its own speed and ignores adjacent gears', () => {
+    const { sim, crank } = buildCrankAt(0, 0)
+    const clutch = createComponentById('clutch') as ClutchComponent
+    if (!(clutch instanceof ClutchComponent)) throw new Error('expected clutch')
+    clutch.x = 1
+    clutch.y = 0
+    sim.addComponent(clutch)
+    const gear = addGear(sim, GEAR_GROUP, 2, 0)
+    crank.rotationSpeed = TWO_PI
+    clutch.rotationSpeed = 5
+    sim.tick()
+    expect(clutch.rotationSpeed).toBeCloseTo(5 - 0.05, 6)
+    expect(gear.rotationSpeed).toBe(0)
+    expect(crank.rotationSpeed).toBeCloseTo(TWO_PI - Math.PI * 0.1, 6)
+  })
+
+  it('engaged clutch joins the coupling system with momentum conservation', () => {
+    const { sim, crank } = buildCrankAt(0, 0)
+    const clutch = createComponentById('clutch') as ClutchComponent
+    if (!(clutch instanceof ClutchComponent)) throw new Error('expected clutch')
+    clutch.x = 1
+    clutch.y = 0
+    sim.addComponent(clutch)
+    crank.rotationSpeed = TWO_PI
+    clutch.rotationSpeed = 5
+    const ctx = { dt: 0.1, simTime: 0, ledger: sim.ledger, host: sim }
+    clutch.current = 0.1
+    clutch.onTick(ctx)
+    expect(clutch.engaged).toBe(true)
+    sim.tick()
+    const expected = (64 * TWO_PI - 64 * 5) / 128 - ((64 * Math.PI + 32) / 128) * 0.1
+    expect(crank.rotationSpeed).toBeCloseTo(expected, 6)
+    expect(clutch.rotationSpeed).toBeCloseTo(-expected, 6)
+  })
+
+  it('disengaging clutch releases the gear back to independence', () => {
+    const { sim, crank } = buildCrankAt(0, 0)
+    const clutch = createComponentById('clutch') as ClutchComponent
+    if (!(clutch instanceof ClutchComponent)) throw new Error('expected clutch')
+    clutch.x = 1
+    clutch.y = 0
+    sim.addComponent(clutch)
+    const gear = addGear(sim, GEAR_GROUP, 2, 0)
+    const ctx = { dt: 0.1, simTime: 0, ledger: sim.ledger, host: sim }
+    clutch.current = 0.1
+    clutch.onTick(ctx)
+    crank.rotationSpeed = TWO_PI
+    clutch.rotationSpeed = -TWO_PI
+    gear.rotationSpeed = -TWO_PI
+    sim.tick()
+    const expected = (64 * TWO_PI + 64 * TWO_PI - 64 * TWO_PI) / 192 - ((128 * Math.PI + 32) / 192) * 0.1
+    expect(gear.rotationSpeed).toBeCloseTo(expected, 6)
+    clutch.current = 0
+    clutch.onTick(ctx)
+    expect(clutch.engaged).toBe(false)
+    for (let i = 0; i < 60; i++) {
+      sim.tick()
+    }
+    expect(crank.rotationSpeed).toBe(0)
+    expect(clutch.rotationSpeed).toBe(0)
+    expect(gear.rotationSpeed).toBe(0)
+  })
+
+  it('flywheel extends coasting and conserves momentum when coupled', () => {
+    const sim = new Simulation()
+    const gear = addGear(sim, GEAR_GROUP, 0, 0)
+    const flywheel = addGear(sim, FLYWHEEL, 1, 0)
+    gear.rotationSpeed = TWO_PI
+    sim.tick()
+    const expected = (64 * TWO_PI) / (64 + 1152 * (4 / 9)) - ((64 * Math.PI) / (64 + 1152 * (4 / 9))) * 0.1
+    expect(gear.rotationSpeed).toBeCloseTo(expected, 6)
+    expect(flywheel.rotationSpeed).toBeCloseTo(-expected * (2 / 3), 6)
+    for (let i = 0; i < 10; i++) {
+      sim.tick()
+    }
+    const coasted = expected - (Math.PI / 9) * 1.0
+    expect(gear.rotationSpeed).toBeCloseTo(coasted, 6)
+    expect(flywheel.rotationSpeed).toBeCloseTo(-coasted * (2 / 3), 6)
+  })
+
+  it('damped gears stop when no drive remains', () => {
+    const sim = new Simulation()
+    const gear = addGear(sim, GEAR_GROUP, 0, 0)
+    gear.rotationSpeed = 10
+    for (let i = 0; i < 40; i++) {
+      sim.tick()
+    }
+    expect(gear.rotationSpeed).toBe(0)
   })
 
   it('overspeed gear breaks down based on breakdown chance', () => {

@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest'
+﻿﻿﻿﻿import { describe, expect, it } from 'vitest'
 import { EnergyType } from '../src/core/energy/EnergyType'
 import { BATTERY_PACK } from '../src/core/components/registry/definitions'
 import { buildSimpleLoop } from './helpers'

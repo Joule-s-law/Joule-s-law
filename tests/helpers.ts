@@ -1,4 +1,4 @@
-﻿import { Simulation } from '../src/core/sim/Simulation'
+﻿﻿﻿﻿import { Simulation } from '../src/core/sim/Simulation'
 import {
   HAND_CRANK,
   RESISTOR,
@@ -7,7 +7,7 @@ import {
   LAMP,
   PHOTOCELL,
   MOTOR,
-  TURBINE,
+  GEAR_GROUP,
   SECONDARY_BATTERY,
 } from '../src/core/components/registry/definitions'
 import type { ComponentDefinition } from '../src/core/components/ComponentDefinition'
@@ -19,7 +19,8 @@ import { SwitchComponent } from '../src/core/components/behaviors/SwitchComponen
 import { ConverterComponent } from '../src/core/components/behaviors/ConverterComponent'
 import { BatteryComponent } from '../src/core/components/behaviors/BatteryComponent'
 import { FieldSensorComponent } from '../src/core/components/behaviors/FieldSensorComponent'
-import { TurbineComponent } from '../src/core/components/behaviors/TurbineComponent'
+import { MotorComponent } from '../src/core/components/behaviors/MotorComponent'
+import { GearComponent } from '../src/core/components/behaviors/GearComponent'
 
 export interface LoopFixture {
   sim: Simulation
@@ -163,8 +164,12 @@ function isSensor(c: unknown): c is FieldSensorComponent {
   return (c as { constructor: { name: string } }).constructor?.name === 'FieldSensorComponent'
 }
 
-function isTurbine(c: unknown): c is TurbineComponent {
-  return (c as { constructor: { name: string } }).constructor?.name === 'TurbineComponent'
+function isMotor(c: unknown): c is MotorComponent {
+  return (c as { constructor: { name: string } }).constructor?.name === 'MotorComponent'
+}
+
+function isGear(c: unknown): c is GearComponent {
+  return (c as { constructor: { name: string } }).constructor?.name === 'GearComponent'
 }
 
 export function buildConverterLoop(defId: string): { sim: Simulation; source: VoltageSourceComponent; converter: ConverterComponent } {
@@ -239,31 +244,26 @@ export function buildFieldPair(): { sim: Simulation; lamp: ResistiveComponent; s
   return { sim, lamp, sensor, sensorLoad }
 }
 
-export function buildKineticPair(): { sim: Simulation; motor: ConverterComponent; turbine: TurbineComponent; turbineLoad: ResistiveComponent } {
+export function buildMotorPair(): { sim: Simulation; motor: MotorComponent; gear: GearComponent } {
   const sim = new Simulation()
   const source = expectType(createComponent(HAND_CRANK), isVoltageSource, 'expected voltage source')
-  const motor = expectType(createComponent(MOTOR), isConverter, 'expected motor')
-  const turbine = expectType(createComponent(TURBINE), isTurbine, 'expected turbine')
-  const turbineLoad = expectType(createComponent(RESISTOR), isResistive, 'expected resistive')
+  const motor = expectType(createComponent(MOTOR), isMotor, 'expected motor')
+  const gearDef: ComponentDefinition = { ...GEAR_GROUP, behaviorParams: { teeth: 8, maxOmega: Math.PI * 12, damping: 0.2 } }
+  const gear = expectType(createComponent(gearDef), isGear, 'expected gear')
   source.rotationSpeed = Math.PI * 2
   source.rotationDrive = 1
   source.x = 0
   source.y = 0
   motor.x = 2
   motor.y = 0
-  turbine.x = 4
-  turbine.y = 0
-  turbineLoad.x = 6
-  turbineLoad.y = 0
+  gear.x = 3
+  gear.y = 0
   sim.addComponent(source)
   sim.addComponent(motor)
   sim.connect(source.getPort(0), motor.getPort(1))
   sim.connect(source.getPort(1), motor.getPort(0))
-  sim.addComponent(turbine)
-  sim.addComponent(turbineLoad)
-  sim.connect(turbine.getPort(0), turbineLoad.getPort(1))
-  sim.connect(turbine.getPort(1), turbineLoad.getPort(0))
-  return { sim, motor, turbine, turbineLoad }
+  sim.addComponent(gear)
+  return { sim, motor, gear }
 }
 
 export function buildOverloadLoop(): { sim: Simulation; source: VoltageSourceComponent; victim: ResistiveComponent } {

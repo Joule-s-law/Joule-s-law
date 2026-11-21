@@ -19,14 +19,11 @@ const MAGNETIC_DECAY = 0.6
 
 export class FieldGrid {
   private readonly sources: FieldSource[] = []
-  private readonly contributions = new Map<FieldType, Float64Array>()
+  private readonly contributions = new Map<FieldType, Map<string, number>>()
 
-  constructor(
-    public readonly cols: number,
-    public readonly rows: number,
-  ) {
+  constructor() {
     for (const type of ['light', 'sound', 'magnetic'] as FieldType[]) {
-      this.contributions.set(type, new Float64Array(cols * rows))
+      this.contributions.set(type, new Map())
     }
   }
 
@@ -39,7 +36,7 @@ export class FieldGrid {
       }
     }
     for (const [, cells] of this.contributions) {
-      cells.fill(0)
+      cells.clear()
     }
     for (const source of this.sources) {
       const cells = this.contributions.get(source.type)
@@ -47,15 +44,13 @@ export class FieldGrid {
       const radius = source.type === 'magnetic' ? 6 : 9
       for (let dy = -radius; dy <= radius; dy++) {
         const cy = source.y + dy
-        if (cy < 0 || cy >= this.rows) continue
         for (let dx = -radius; dx <= radius; dx++) {
           const cx = source.x + dx
-          if (cx < 0 || cx >= this.cols) continue
           const d2 = dx * dx + dy * dy
           const decay = source.type === 'magnetic' ? MAGNETIC_DECAY : FALLOFF
-          const index = cy * this.cols + cx
-          const previous = cells[index]
-          cells[index] = (previous ?? 0) + (source.strength / (1 + d2 * decay))
+          const key = `${cx},${cy}`
+          const previous = cells.get(key)
+          cells.set(key, (previous ?? 0) + (source.strength / (1 + d2 * decay)))
         }
       }
     }
@@ -64,8 +59,7 @@ export class FieldGrid {
   sample(type: FieldType, x: number, y: number): number {
     const cells = this.contributions.get(type)
     if (cells === undefined) return 0
-    const index = y * this.cols + x
-    return cells[index] ?? 0
+    return cells.get(`${x},${y}`) ?? 0
   }
 }
 

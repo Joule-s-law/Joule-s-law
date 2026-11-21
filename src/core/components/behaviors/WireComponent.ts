@@ -68,6 +68,10 @@ export class WireComponent extends BaseComponent {
     return { a: { ...this.anchorA }, b: { ...this.anchorB } }
   }
 
+  getPortWorldPos(index: number): { x: number; y: number } {
+    return index === 0 ? { x: this.anchorA.x, y: this.anchorA.y } : { x: this.anchorB.x, y: this.anchorB.y }
+  }
+
   setAnchors(a: WireAnchor, b: WireAnchor): void {
     this.anchorA = { ...a }
     this.anchorB = { ...b }

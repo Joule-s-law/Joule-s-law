@@ -11,6 +11,6 @@ export const GEAR_GROUP: ComponentDefinition = {
   resistance: 0,
   ratedCurrent: 0,
   behaviorId: 'gear',
-  behaviorParams: { teeth: 8, maxOmega: Math.PI * 12 },
+  behaviorParams: { teeth: 8, maxOmega: Math.PI * 12, damping: Math.PI },
   behaviorTags: { rotatable: '1' },
 }

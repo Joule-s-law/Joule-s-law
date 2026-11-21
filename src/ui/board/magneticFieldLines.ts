@@ -1,5 +1,6 @@
 import type { BaseComponent } from '../../core/components/BaseComponent'
 import { CELL_SIZE } from '../../shared/constants'
+import type { FieldBounds } from './electricFieldView'
 
 export interface Point {
   x: number
@@ -78,8 +79,7 @@ function march(
   seed: Point,
   direction: number,
   sources: MagneticSource[],
-  width: number,
-  height: number,
+  bounds: FieldBounds,
 ): Point[] {
   const points: Point[] = []
   let px = seed.x
@@ -94,7 +94,7 @@ function march(
     px += direction * STEP * midField.x
     py += direction * STEP * midField.y
     points.push({ x: px, y: py })
-    if (px < -60 || py < -60 || px > width + 60 || py > height + 60) break
+    if (px < bounds.x0 - 60 || py < bounds.y0 - 60 || px > bounds.x1 + 60 || py > bounds.y1 + 60) break
   }
   return points
 }
@@ -105,8 +105,7 @@ function clampLineCount(current: number): number {
 
 export function traceMagneticFieldLines(
   components: BaseComponent[],
-  width: number,
-  height: number,
+  bounds: FieldBounds,
 ): FieldLine[] {
   const sources = collectMagneticSources(components)
   const lines: FieldLine[] = []
@@ -119,8 +118,8 @@ export function traceMagneticFieldLines(
       const side = i % 2 === 0 ? 1 : -1
       const distance = MIN_LOOP + ((i + 0.5) * (MAX_LOOP - MIN_LOOP)) / count
       const seed = { x: source.x, y: source.y + side * distance * axisSign }
-      const forward = march(seed, 1, sources, width, height)
-      const backward = march(seed, -1, sources, width, height)
+      const forward = march(seed, 1, sources, bounds)
+      const backward = march(seed, -1, sources, bounds)
       backward.reverse()
       const points = [...backward, seed, ...forward]
       if (points.length >= 6) lines.push({ points, alpha })

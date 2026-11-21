@@ -29,6 +29,13 @@ export interface FieldVector {
   ey: number
 }
 
+export interface FieldBounds {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+
 const FIELD_K = 2400
 const CHARGE_PER_VOLT = 1.5
 const SOFTEN_DIST = 26
@@ -100,7 +107,7 @@ function fieldDirection(sources: ChargeSource[], px: number, py: number): Point 
   return { x: field.ex / magnitude, y: field.ey / magnitude }
 }
 
-function marchFieldLine(seed: Point, direction: number, sources: ChargeSource[], width: number, height: number): Point[] {
+function marchFieldLine(seed: Point, direction: number, sources: ChargeSource[], bounds: FieldBounds): Point[] {
   const points: Point[] = []
   let px = seed.x
   let py = seed.y
@@ -114,12 +121,12 @@ function marchFieldLine(seed: Point, direction: number, sources: ChargeSource[],
     px += direction * LINE_STEP * midField.x
     py += direction * LINE_STEP * midField.y
     points.push({ x: px, y: py })
-    if (px < -60 || py < -60 || px > width + 60 || py > height + 60) break
+    if (px < bounds.x0 - 60 || py < bounds.y0 - 60 || px > bounds.x1 + 60 || py > bounds.y1 + 60) break
   }
   return points
 }
 
-export function traceElectricFieldLines(sources: ChargeSource[], width: number, height: number): FieldLine[] {
+export function traceElectricFieldLines(sources: ChargeSource[], bounds: FieldBounds): FieldLine[] {
   const lines: FieldLine[] = []
   for (const source of sources) {
     if (Math.abs(source.charge) < 0.5) continue
@@ -129,7 +136,7 @@ export function traceElectricFieldLines(sources: ChargeSource[], width: number, 
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2
       const seed = { x: source.x + Math.cos(angle) * LINE_SEED_DIST, y: source.y + Math.sin(angle) * LINE_SEED_DIST }
-      const marched = marchFieldLine(seed, direction, sources, width, height)
+      const marched = marchFieldLine(seed, direction, sources, bounds)
       const points = direction > 0 ? [seed, ...marched] : [...marched.slice().reverse(), seed]
       if (points.length >= 6) lines.push({ points, alpha })
     }
@@ -161,13 +168,13 @@ function appendCellSegments(out: Point[], target: number, x0: number, y0: number
   }
 }
 
-export function computeIsolines(sources: ChargeSource[], width: number, height: number): Isoline[] {
-  const cols = Math.floor(width / SAMPLE_STEP) + 1
-  const rows = Math.floor(height / SAMPLE_STEP) + 1
+export function computeIsolines(sources: ChargeSource[], bounds: FieldBounds): Isoline[] {
+  const cols = Math.floor((bounds.x1 - bounds.x0) / SAMPLE_STEP) + 1
+  const rows = Math.floor((bounds.y1 - bounds.y0) / SAMPLE_STEP) + 1
   const values = new Float64Array(cols * rows)
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
-      values[row * cols + col] = electricPotentialAt(sources, col * SAMPLE_STEP, row * SAMPLE_STEP)
+      values[row * cols + col] = electricPotentialAt(sources, bounds.x0 + col * SAMPLE_STEP, bounds.y0 + row * SAMPLE_STEP)
     }
   }
   const isolines: Isoline[] = []
@@ -177,8 +184,8 @@ export function computeIsolines(sources: ChargeSource[], width: number, height: 
       const target = sign * level
       for (let row = 0; row < rows - 1; row++) {
         for (let col = 0; col < cols - 1; col++) {
-          const x0 = col * SAMPLE_STEP
-          const y0 = row * SAMPLE_STEP
+          const x0 = bounds.x0 + col * SAMPLE_STEP
+          const y0 = bounds.y0 + row * SAMPLE_STEP
           const v0 = values[row * cols + col] ?? 0
           const v1 = values[row * cols + col + 1] ?? 0
           const v2 = values[(row + 1) * cols + col + 1] ?? 0

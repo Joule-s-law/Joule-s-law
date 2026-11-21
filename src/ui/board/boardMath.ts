@@ -1,10 +1,9 @@
 import type { BaseComponent } from '../../core/components/BaseComponent'
 import type { Port } from '../../core/circuit/Port'
 import { CELL_SIZE } from '../../shared/constants'
+import { FreeTerminalComponent } from '../../core/components/behaviors/FreeTerminalComponent'
 
 export { CELL_SIZE }
-export const GRID_COLS = 24
-export const GRID_ROWS = 14
 
 export interface Point {
   px: number
@@ -12,6 +11,10 @@ export interface Point {
 }
 
 export function portPosition(component: BaseComponent, portIndex: number): Point {
+  if (component instanceof FreeTerminalComponent) {
+    const pos = component.getPortWorldPos(portIndex)
+    return { px: pos.x, py: pos.y }
+  }
   const baseX = component.x * CELL_SIZE
   const top = component.y * CELL_SIZE
   const height = component.height * CELL_SIZE

@@ -81,11 +81,13 @@ export const useSettingsStore = defineStore('settings', () => {
   const prefixFlux = ref<MetricPrefix>((persisted['prefixFlux'] as MetricPrefix) ?? 'none')
   const prefixFluxDensity = ref<MetricPrefix>((persisted['prefixFluxDensity'] as MetricPrefix) ?? 'none')
   const showFieldLines = ref(persisted['showFieldLines'] !== false)
+  const electricFieldMode = ref(persisted['electricFieldMode'] === true)
   const debugVisible = ref(false)
   const freePurchases = ref(false)
+  const sandboxMode = ref(false)
 
   watch(
-    [wsUrl, angularUnit, prefixCurrent, prefixVoltage, prefixResistance, prefixFlux, prefixFluxDensity, showFieldLines],
+    [wsUrl, angularUnit, prefixCurrent, prefixVoltage, prefixResistance, prefixFlux, prefixFluxDensity, showFieldLines, electricFieldMode],
     () => {
       try {
         localStorage.setItem(
@@ -99,6 +101,7 @@ export const useSettingsStore = defineStore('settings', () => {
             prefixFlux: prefixFlux.value,
             prefixFluxDensity: prefixFluxDensity.value,
             showFieldLines: showFieldLines.value,
+            electricFieldMode: electricFieldMode.value,
           }),
         )
       } catch {
@@ -116,7 +119,9 @@ export const useSettingsStore = defineStore('settings', () => {
     prefixFlux,
     prefixFluxDensity,
     showFieldLines,
+    electricFieldMode,
     debugVisible,
     freePurchases,
+    sandboxMode,
   }
 })

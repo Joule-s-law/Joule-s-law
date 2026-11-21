@@ -1,4 +1,4 @@
-export type BehaviorId = 'voltageSource' | 'resistive' | 'wire' | 'converter' | 'turbine' | 'battery' | 'switch' | 'fieldSensor' | 'gear' | 'diode' | 'rheostat' | 'voltageTransformer' | 'fourthGenerator' | 'chainDrive'
+export type BehaviorId = 'voltageSource' | 'resistive' | 'wire' | 'converter' | 'motor' | 'battery' | 'switch' | 'fieldSensor' | 'gear' | 'diode' | 'rheostat' | 'voltageTransformer' | 'fourthGenerator' | 'chainDrive' | 'photonScreen' | 'electronGun' | 'clutch' | 'freeTerminal' | 'steamSource' | 'steamTurbine' | 'pipe' | 'tank' | 'condenser'
 
 export interface ComponentDefinition {
   id: string
@@ -16,7 +16,7 @@ export interface ComponentDefinition {
   behaviorTags: Record<string, string>
   width?: number
   height?: number
-  portLayout?: 'rows'
+  portLayout?: 'rows' | 'vertical'
 }
 
 export function paramNumber(def: ComponentDefinition, key: string, fallback: number): number {

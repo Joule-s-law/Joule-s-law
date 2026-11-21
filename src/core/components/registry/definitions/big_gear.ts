@@ -11,7 +11,7 @@ export const BIG_GEAR: ComponentDefinition = {
   resistance: 0,
   ratedCurrent: 0,
   behaviorId: 'gear',
-  behaviorParams: { teeth: 16, maxOmega: Math.PI * 12 },
+  behaviorParams: { teeth: 16, maxOmega: Math.PI * 12, damping: Math.PI },
   behaviorTags: { rotatable: '1' },
   width: 2,
   height: 2,

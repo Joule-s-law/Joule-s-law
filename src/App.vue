@@ -93,6 +93,7 @@ body {
 .center {
   flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 .right {
   width: clamp(190px, 19vw, 240px);

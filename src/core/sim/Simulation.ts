@@ -7,6 +7,9 @@ import type { BaseComponent } from '../components/BaseComponent'
 import { FieldSensorComponent } from '../components/behaviors/FieldSensorComponent'
 import { WireComponent } from '../components/behaviors/WireComponent'
 import { ChainDriveComponent } from '../components/behaviors/ChainDriveComponent'
+import { PipeComponent } from '../components/behaviors/PipeComponent'
+import { PipeSystem } from '../fluids/pipeSystem'
+import { buildFluidLinks, type FluidNeighbor } from '../fluids/fluidInterface'
 import { DiodeComponent } from '../components/behaviors/DiodeComponent'
 import { FieldGrid } from '../fields/FieldGrid'
 import { Economy } from '../economy/Economy'
@@ -25,19 +28,40 @@ export interface EnergyEvent {
   y: number
 }
 
+export interface ElectronLaunch {
+  x: number
+  y: number
+  vx: number
+  vy: number
+}
+
+export interface FluidEmission {
+  x: number
+  y: number
+  fluidId: string
+  vx: number
+  vy: number
+  count: number
+}
+
+const ELECTRON_LAUNCH_LIMIT = 128
+const FLUID_EMISSION_LIMIT = 96
+
 export class Simulation {
   readonly economy = new Economy()
   readonly ledger = new EnergyLedger()
   readonly graph = new CircuitGraph()
-  readonly fieldGrid = new FieldGrid(24, 14)
+  readonly fieldGrid = new FieldGrid()
   readonly components: BaseComponent[] = []
   readonly chainByGear = new Map<BaseComponent, ChainDriveComponent>()
   readonly purchaseCounts = new Map<string, number>()
   private readonly adjacencyPairs: Array<[Port, Port]> = []
   private readonly energyEvents: EnergyEvent[] = []
+  private readonly electronLaunches: ElectronLaunch[] = []
+  private readonly fluidEmissions: FluidEmission[] = []
   private readonly pendingDestroys = new Set<BaseComponent>()
   readonly rotation = new RotationSystem()
-  kineticPool = 0
+  readonly pipeSystem = new PipeSystem()
   ratedCurrentBoost = 1
   converterEfficiencyBoost = 0
   sensorEfficiencyBoost = 0
@@ -64,6 +88,7 @@ export class Simulation {
       this.chainByGear.set(component.gearB, component)
     }
     this.resyncAdjacencyFor(component)
+    if (component instanceof PipeComponent) this.rebuildPipes()
   }
 
   removeComponent(component: BaseComponent): void {
@@ -86,6 +111,56 @@ export class Simulation {
         if (this.chainByGear.get(chain.gearB) === chain) this.chainByGear.delete(chain.gearB)
       }
     }
+    if (component instanceof PipeComponent || this.hasPipeNeighbor(component)) this.rebuildPipes()
+  }
+
+  private hasPipeNeighbor(component: BaseComponent): boolean {
+    for (const other of this.components) {
+      if (!(other instanceof PipeComponent)) continue
+      if (Math.abs(other.x - component.x) + Math.abs(other.y - component.y) <= 2) return true
+    }
+    return false
+  }
+
+  rebuildPipes(): void {
+    const links = buildFluidLinks(this.components)
+    this.pipeSystem.rebuild(
+      this.components.filter((component): component is PipeComponent => component instanceof PipeComponent),
+      links,
+    )
+  }
+
+  fluidLinksOf(component: BaseComponent): FluidNeighbor[] {
+    const neighbors: FluidNeighbor[] = []
+    for (const link of buildFluidLinks(this.components)) {
+      if (link.a.component === component) neighbors.push({ selfIface: link.a.iface, partner: link.b.component, partnerIface: link.b.iface })
+      else if (link.b.component === component) neighbors.push({ selfIface: link.b.iface, partner: link.a.component, partnerIface: link.a.iface })
+    }
+    return neighbors
+  }
+
+  pipeNetworkId(pipe: PipeComponent): number | null {
+    const network = this.pipeSystem.networkOf(pipe)
+    return network === null ? null : network.id
+  }
+
+  pushPipeFluid(pipe: PipeComponent, fluidId: string, amount: number): number {
+    return this.pipeSystem.pushFluid(pipe, fluidId, amount)
+  }
+
+  pullPipeFluid(pipe: PipeComponent, max: number, filter?: (fluidId: string) => boolean): { fluidId: string; amount: number } | null {
+    return this.pipeSystem.pullFluid(pipe, max, filter)
+  }
+
+  emitFluid(x: number, y: number, fluidId: string, vx: number, vy: number, count: number): void {
+    if (this.fluidEmissions.length >= FLUID_EMISSION_LIMIT) return
+    this.fluidEmissions.push({ x, y, fluidId, vx, vy, count })
+  }
+
+  drainFluidEmissions(): FluidEmission[] {
+    const events = this.fluidEmissions
+    this.fluidEmissions.length = 0
+    return events
   }
 
   resyncAdjacencyFor(component: BaseComponent): void {
@@ -223,6 +298,15 @@ export class Simulation {
 
   drainEnergyEvents(): EnergyEvent[] {
     return this.energyEvents.splice(0, this.energyEvents.length)
+  }
+
+  emitElectron(x: number, y: number, vx: number, vy: number): void {
+    if (this.electronLaunches.length >= ELECTRON_LAUNCH_LIMIT) return
+    this.electronLaunches.push({ x, y, vx, vy })
+  }
+
+  drainElectronLaunches(): ElectronLaunch[] {
+    return this.electronLaunches.splice(0, this.electronLaunches.length)
   }
 
   clickReadyIn(): number {

@@ -6,7 +6,7 @@ import { EnergyType } from '../../energy/EnergyType'
 import type { TickContext } from '../../sim/TickContext'
 import type { FieldEmission, FieldType } from '../../fields/FieldGrid'
 
-export type ConverterOutputMode = 'income' | 'kineticPool' | 'none'
+export type ConverterOutputMode = 'income' | 'none'
 
 export class ConverterComponent extends BaseComponent {
   readonly efficiency: number
@@ -44,10 +44,6 @@ export class ConverterComponent extends BaseComponent {
       const effective = dissipated * this.getEffectiveEfficiency(ctx.host.converterEfficiencyBoost)
       ctx.ledger.add(this.outputForm, effective)
       ctx.host.emitEnergy(this.outputForm, effective, this.x + 0.5, this.y + 0.5)
-    } else if (this.outputMode === 'kineticPool') {
-      const effective = dissipated * this.getEffectiveEfficiency(ctx.host.converterEfficiencyBoost)
-      ctx.host.kineticPool += effective
-      ctx.host.emitEnergy(EnergyType.KINETIC, effective, this.x + 0.5, this.y + 0.5)
     }
   }
 

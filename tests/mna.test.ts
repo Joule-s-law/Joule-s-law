@@ -1,10 +1,11 @@
-﻿import { describe, expect, it } from 'vitest'
+﻿﻿﻿﻿import { describe, expect, it } from 'vitest'
 import { buildParallel, buildSeriesLoop, buildSimpleLoop } from './helpers'
 import { Simulation } from '../src/core/sim/Simulation'
 import { AMMETER, VOLTMETER, HAND_CRANK, RESISTOR } from '../src/core/components/registry/definitions'
-import { createComponent } from '../src/core/components/registry/componentRegistry'
+import { createComponent, createComponentById } from '../src/core/components/registry/componentRegistry'
 import { ResistiveComponent } from '../src/core/components/behaviors/ResistiveComponent'
 import { VoltageSourceComponent } from '../src/core/components/behaviors/VoltageSourceComponent'
+import { FreeTerminalComponent } from '../src/core/components/behaviors/FreeTerminalComponent'
 
 describe('meters', () => {
   it('ammeter in series reads loop current with negligible voltage drop', () => {
@@ -55,6 +56,45 @@ describe('meters', () => {
     sim.tick()
     expect(Math.abs(vmeter.current)).toBeLessThan(0.0001)
     expect(vmeter.voltage).toBeCloseTo(load.voltage, 6)
+  })
+
+  it('free terminal joins wires into one node at an arbitrary position', () => {
+    const sim = new Simulation()
+    const source = createComponent(HAND_CRANK) as VoltageSourceComponent
+    const terminal = createComponentById('free_terminal') as FreeTerminalComponent
+    const load = createComponent(RESISTOR) as ResistiveComponent
+    source.rotationSpeed = Math.PI * 2
+    source.rotationDrive = 1
+    source.x = 0
+    source.y = 0
+    terminal.setFreePosition(137, 64)
+    load.x = 4
+    load.y = 0
+    sim.addComponent(source)
+    sim.addComponent(terminal)
+    sim.addComponent(load)
+    const sourcePos = source.getPortWorldPos(0)
+    const loadPos = load.getPortWorldPos(0)
+    const w1 = createComponentById('wire', {
+      wireLength: 3,
+      wireAnchorA: { x: sourcePos.x, y: sourcePos.y },
+      wireAnchorB: { x: 137, y: 64 },
+    })
+    const w2 = createComponentById('wire', {
+      wireLength: 3,
+      wireAnchorA: { x: 137, y: 64 },
+      wireAnchorB: { x: loadPos.x, y: loadPos.y },
+    })
+    sim.addComponent(w1)
+    sim.addComponent(w2)
+    sim.connect(source.getPort(0), w1.getPort(0))
+    sim.connect(w1.getPort(1), terminal.getPort(0))
+    sim.connect(terminal.getPort(0), w2.getPort(0))
+    sim.connect(w2.getPort(1), load.getPort(0))
+    sim.connect(source.getPort(1), load.getPort(1))
+    sim.tick()
+    expect(Math.abs(load.current)).toBeCloseTo(10 / 13, 6)
+    expect(Math.abs(load.voltage)).toBeCloseTo((10 / 13) * 10, 6)
   })
 })
 

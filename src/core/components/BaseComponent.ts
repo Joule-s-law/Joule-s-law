@@ -5,14 +5,15 @@ import { Port } from '../circuit/Port'
 import type { SimulationHost, TickContext } from '../sim/TickContext'
 import type { FieldEmission } from '../fields/FieldGrid'
 import { CELL_SIZE } from '../../shared/constants'
+import type { FluidInterface } from '../fluids/fluidInterface'
 
 const SENSOR_AREA_M2 = 0.01
 
 export abstract class BaseComponent {
   readonly def: ComponentDefinition
   readonly ports: Port[]
-  readonly width: number
-  readonly height: number
+  width: number
+  height: number
   readonly teeth: number
   current = 0
   voltage = 0
@@ -24,6 +25,7 @@ export abstract class BaseComponent {
   rotationSpeed = 0
   rotationAngle = 0
   rotationAngleAt = 0
+  rotationZ = 0
   monitored = false
 
   constructor(def: ComponentDefinition) {
@@ -31,6 +33,7 @@ export abstract class BaseComponent {
     this.width = def.width ?? 1
     this.height = def.height ?? 1
     this.teeth = paramNumber(def, 'teeth', 8)
+    this.rotationZ = paramNumber(def, 'rotationZ', 0)
     this.ports = []
     for (let i = 0; i < def.portCount; i++) {
       this.ports.push(new Port(this, i))
@@ -47,6 +50,22 @@ export abstract class BaseComponent {
 
   getAngularAcceleration(): number {
     return 0
+  }
+
+  getDamping(): number {
+    return paramNumber(this.def, 'damping', 0)
+  }
+
+  getInertia(): number {
+    return this.teeth * this.teeth * paramNumber(this.def, 'inertia', 1)
+  }
+
+  getMaxOmega(): number {
+    return Number.POSITIVE_INFINITY
+  }
+
+  getFluidInterfaces(): FluidInterface[] {
+    return []
   }
 
   abstract buildCircuitModel(model: MnaModel): void
@@ -87,6 +106,12 @@ export abstract class BaseComponent {
       if (index === 1) return { x: this.x * CELL_SIZE, y: top + height * 0.75 }
       if (index === 2) return { x: (this.x + this.width) * CELL_SIZE, y: top + height * 0.25 }
       return { x: (this.x + this.width) * CELL_SIZE, y: top + height * 0.75 }
+    }
+    if (this.def.portLayout === 'vertical') {
+      const centerX = this.x * CELL_SIZE + (this.width * CELL_SIZE) / 2
+      return index === 0
+        ? { x: centerX, y: top }
+        : { x: centerX, y: top + height }
     }
     const baseY = top + height / 2
     return index === 0

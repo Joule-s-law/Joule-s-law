@@ -24,9 +24,11 @@ export class VoltageSourceComponent extends BaseComponent {
 
   getAngularAcceleration(): number {
     if (this.rotationDrive === 0) return 0
-    if (this.rotationDrive > 0 && this.rotationSpeed >= TWO_PI) return 0
-    if (this.rotationDrive < 0 && this.rotationSpeed <= -TWO_PI) return 0
     return this.rotationDrive * TWO_PI
+  }
+
+  getMaxOmega(): number {
+    return TWO_PI
   }
 
   buildCircuitModel(model: MnaModel): void {

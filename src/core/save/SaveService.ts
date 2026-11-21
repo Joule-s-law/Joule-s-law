@@ -3,6 +3,11 @@ import { WireComponent } from '../components/behaviors/WireComponent'
 import { BatteryComponent } from '../components/behaviors/BatteryComponent'
 import { SwitchComponent } from '../components/behaviors/SwitchComponent'
 import { FourthGeneratorComponent } from '../components/behaviors/FourthGeneratorComponent'
+import { ElectronGunComponent } from '../components/behaviors/ElectronGunComponent'
+import { PhotonScreenComponent } from '../components/behaviors/PhotonScreenComponent'
+import type { PhotonPropagation } from '../components/behaviors/PhotonScreenComponent'
+import { FreeTerminalComponent } from '../components/behaviors/FreeTerminalComponent'
+import { TankComponent } from '../components/behaviors/TankComponent'
 import { createComponentById } from '../components/registry/componentRegistry'
 import type { Simulation } from '../sim/Simulation'
 import type { TechTree } from '../tech/TechTree'
@@ -27,6 +32,15 @@ interface SavedComponent {
   switchClosed?: boolean
   fourthGenUuid?: string
   fourthGenName?: string
+  electronGunAngle?: number
+  electronGunSpeed?: number
+  photonPropagation?: PhotonPropagation
+  photonWidth?: number
+  photonHeight?: number
+  terminalX?: number
+  terminalY?: number
+  tankFluidId?: string | null
+  tankAmount?: number
 }
 
 interface SavedLink {
@@ -38,7 +52,6 @@ interface SaveData {
   version: number
   money: number
   simTime: number
-  kineticPool: number
   incomePerSecond: number
   savedAtRealMs: number
   purchaseCounts: Record<string, number>
@@ -126,6 +139,14 @@ export class SaveService {
       ...(component instanceof FourthGeneratorComponent
         ? { fourthGenUuid: component.uuid, fourthGenName: component.customName }
         : {}),
+      ...(component instanceof ElectronGunComponent
+        ? { electronGunAngle: component.aimAngle, electronGunSpeed: component.launchSpeed }
+        : {}),
+      ...(component instanceof PhotonScreenComponent
+        ? { photonPropagation: component.propagation, photonWidth: component.width, photonHeight: component.height }
+        : {}),
+      ...(component instanceof FreeTerminalComponent ? { terminalX: component.posX, terminalY: component.posY } : {}),
+      ...(component instanceof TankComponent ? { tankFluidId: component.storedFluidId, tankAmount: component.storedAmount } : {}),
     }))
     const componentIndex = new Map<BaseComponent, number>(this.sim.components.map((component, index) => [component, index]))
     const links: SavedLink[] = []
@@ -154,7 +175,6 @@ export class SaveService {
       version: SAVE_VERSION,
       money: this.sim.economy.money,
       simTime: this.sim.simTime,
-      kineticPool: this.sim.kineticPool,
       incomePerSecond: this.sim.incomePerSecond,
       savedAtRealMs: Date.now(),
       purchaseCounts,
@@ -172,7 +192,6 @@ export class SaveService {
     this.techTree.applyLevels(data.techLevels ?? {})
     this.sim.economy.money = data.money
     this.sim.simTime = data.simTime
-    this.sim.kineticPool = data.kineticPool
     this.sim.incomePerSecond = data.incomePerSecond
     this.sim.purchaseCounts.clear()
     for (const [id, count] of Object.entries(data.purchaseCounts)) {
@@ -195,12 +214,23 @@ export class SaveService {
           switchClosed: saved.switchClosed,
           fourthGenUuid: saved.fourthGenUuid,
           fourthGenName: saved.fourthGenName,
+          electronGunAngle: saved.electronGunAngle,
+          electronGunSpeed: saved.electronGunSpeed,
+          photonPropagation: saved.photonPropagation,
+          terminalX: saved.terminalX,
+          terminalY: saved.terminalY,
+          tankFluidId: saved.tankFluidId,
+          tankAmount: saved.tankAmount,
         })
       } catch {
         continue
       }
       component.x = saved.x
       component.y = saved.y
+      if (component instanceof PhotonScreenComponent && saved.photonWidth !== undefined && saved.photonHeight !== undefined) {
+        component.width = saved.photonWidth
+        component.height = saved.photonHeight
+      }
       this.sim.addComponent(component)
       components.push(component)
     }

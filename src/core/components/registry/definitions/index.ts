@@ -24,6 +24,11 @@ import { AMMETER } from './ammeter'
 import { VOLTMETER } from './voltmeter'
 import { VOLTAGE_DOUBLER, VOLTAGE_HALVER } from './voltage_transformer'
 import { FOURTH_GENERATOR } from './fourth_generator'
+import { PHOTON_SCREEN } from './photon_screen'
+import { ELECTRON_GUN } from './electron_gun'
+import { CLUTCH, FLYWHEEL } from './clutch'
+import { FREE_TERMINAL } from './free_terminal'
+import { PIPE, TANK, CONDENSER } from './fluid_components'
 
 export const ALL_DEFS: ComponentDefinition[] = [
   HAND_CRANK,
@@ -52,6 +57,14 @@ export const ALL_DEFS: ComponentDefinition[] = [
   VOLTAGE_DOUBLER,
   VOLTAGE_HALVER,
   FOURTH_GENERATOR,
+  PHOTON_SCREEN,
+  ELECTRON_GUN,
+  CLUTCH,
+  FLYWHEEL,
+  FREE_TERMINAL,
+  PIPE,
+  TANK,
+  CONDENSER,
 ]
 
 const COMPONENT_LABELS: Record<string, string[]> = {
@@ -81,6 +94,14 @@ const COMPONENT_LABELS: Record<string, string[]> = {
   voltage_doubler: ['电磁感应'],
   voltage_halver: ['电磁感应'],
   fourth_generator: ['打破第四面墙'],
+  photon_screen: ['光电效应'],
+  electron_gun: ['电子发射'],
+  clutch: ['机械传动', '电磁吸合'],
+  flywheel: ['机械传动', '惯性储能'],
+  free_terminal: ['接线'],
+  pipe: ['流体系统'],
+  tank: ['流体系统', '储存'],
+  condenser: ['流体系统', '凝结'],
 }
 
 for (const def of ALL_DEFS) {
@@ -114,4 +135,12 @@ export {
   VOLTAGE_DOUBLER,
   VOLTAGE_HALVER,
   FOURTH_GENERATOR,
+  PHOTON_SCREEN,
+  ELECTRON_GUN,
+  CLUTCH,
+  FLYWHEEL,
+  FREE_TERMINAL,
+  PIPE,
+  TANK,
+  CONDENSER,
 }

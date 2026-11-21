@@ -12,13 +12,20 @@ import { WireComponent } from '../../core/components/behaviors/WireComponent'
 import { SwitchComponent } from '../../core/components/behaviors/SwitchComponent'
 import { BatteryComponent } from '../../core/components/behaviors/BatteryComponent'
 import { FourthGeneratorComponent } from '../../core/components/behaviors/FourthGeneratorComponent'
+import { ClutchComponent } from '../../core/components/behaviors/ClutchComponent'
+import { FreeTerminalComponent } from '../../core/components/behaviors/FreeTerminalComponent'
+import { TankComponent } from '../../core/components/behaviors/TankComponent'
+import { TurbineComponent } from '../../core/components/behaviors/TurbineComponent'
+import { ElectronGunComponent } from '../../core/components/behaviors/ElectronGunComponent'
+import { PhotonScreenComponent } from '../../core/components/behaviors/PhotonScreenComponent'
+import type { PhotonPropagation } from '../../core/components/behaviors/PhotonScreenComponent'
 import { VoltageTransformerComponent } from '../../core/components/behaviors/VoltageTransformerComponent'
 import { ChainDriveComponent, gearCenter } from '../../core/components/behaviors/ChainDriveComponent'
 import { FourthWallClient } from '../../net/FourthWallClient'
 import { useSettingsStore } from '../settings/useSettingsStore'
 import { WIRE } from '../../core/components/registry/definitions'
 import { WIRE_MATERIALS, getWireMaterial, DEFAULT_WIRE_MATERIAL_ID } from '../../core/components/registry/wireMaterials'
-import { CELL_SIZE, GRID_COLS, GRID_ROWS, portPosition, wireDistance } from '../board/boardMath'
+import { CELL_SIZE, portPosition, wireDistance } from '../board/boardMath'
 
 const WIRE_MATERIAL_PREF_KEY = 'joules-law-wire-material'
 
@@ -51,10 +58,24 @@ export interface ComponentInfo {
   inputVoltage: number
   inputCurrent: number
   isFourthGenerator: boolean
+  isClutch: boolean
+  clutchEngaged: boolean
   fourthGenUuid: string
   fourthGenName: string
   externalEmf: number
   externalMaxEmf: number
+  isTank: boolean
+  tankFluidId: string | null
+  tankAmount: number
+  tankCapacity: number
+  isTurbine: boolean
+  turbineSteamPower: number
+  isElectronGun: boolean
+  aimAngle: number
+  launchSpeed: number
+  launchFrequency: number
+  isPhotonScreen: boolean
+  propagation: PhotonPropagation
   rotatable: boolean
   rotationSpeed: number
   monitored: boolean
@@ -210,10 +231,24 @@ export const useGameStore = defineStore('game', () => {
       inputVoltage: component instanceof VoltageTransformerComponent ? component.getInputVoltage() : 0,
       inputCurrent: component instanceof VoltageTransformerComponent ? component.getInputCurrent() : 0,
       isFourthGenerator: component instanceof FourthGeneratorComponent,
+      isClutch: component instanceof ClutchComponent,
+      clutchEngaged: component instanceof ClutchComponent ? component.engaged : false,
       fourthGenUuid: component instanceof FourthGeneratorComponent ? component.uuid : '',
       fourthGenName: component instanceof FourthGeneratorComponent ? component.customName : '',
       externalEmf: component instanceof FourthGeneratorComponent ? component.externalEmf : 0,
       externalMaxEmf: component instanceof FourthGeneratorComponent ? component.externalMaxEmf : 0,
+      isTank: component instanceof TankComponent,
+      tankFluidId: component instanceof TankComponent ? component.storedFluidId : null,
+      tankAmount: component instanceof TankComponent ? component.storedAmount : 0,
+      tankCapacity: component instanceof TankComponent ? component.capacity : 0,
+      isTurbine: component instanceof TurbineComponent,
+      turbineSteamPower: component instanceof TurbineComponent ? component.steamPower : 0,
+      isElectronGun: component instanceof ElectronGunComponent,
+      aimAngle: component instanceof ElectronGunComponent ? component.aimAngle : 0,
+      launchSpeed: component instanceof ElectronGunComponent ? component.launchSpeed : 0,
+      launchFrequency: component instanceof ElectronGunComponent ? Math.abs(component.voltage) : 0,
+      isPhotonScreen: component instanceof PhotonScreenComponent,
+      propagation: component instanceof PhotonScreenComponent ? component.propagation : 'right',
       rotatable: component.def.behaviorTags['rotatable'] === '1',
       rotationSpeed: component.rotationSpeed,
       monitored: component.monitored,
@@ -485,7 +520,6 @@ export const useGameStore = defineStore('game', () => {
   }
 
   function isAreaFree(cellX: number, cellY: number, width: number, height: number, ignore: BaseComponent | null): boolean {
-    if (cellX < 0 || cellY < 0 || cellX + width > GRID_COLS || cellY + height > GRID_ROWS) return false
     for (const other of sim.components) {
       if (other === ignore) continue
       if (other instanceof WireComponent || other instanceof ChainDriveComponent) continue
@@ -519,7 +553,6 @@ export const useGameStore = defineStore('game', () => {
         const key = `${nx},${ny}`
         if (visited.has(key)) continue
         visited.add(key)
-        if (nx < 0 || ny < 0 || nx >= GRID_COLS || ny >= GRID_ROWS) continue
         if (isAreaFree(nx, ny, width, height, ignore)) return { x: nx, y: ny }
         queue.push({ x: nx, y: ny })
       }
@@ -547,47 +580,147 @@ export const useGameStore = defineStore('game', () => {
     refreshSnapshot()
   }
 
-  const dragPlace = shallowRef<{ defId: string; cellX: number; cellY: number } | null>(null)
-  let boardRectGetter: (() => DOMRect | null) | null = null
+  const dragPlace = shallowRef<{ defId: string; cellX: number; cellY: number; px: number; py: number } | null>(null)
+  const screenPlacing = ref(false)
+  const pipePlacing = ref(false)
+  let boardScreenToWorld: ((clientX: number, clientY: number) => { x: number; y: number } | null) | null = null
 
-  function registerBoardRect(getter: () => DOMRect | null): void {
-    boardRectGetter = getter
+  function cancelScreenPlacement(): void {
+    screenPlacing.value = false
+  }
+
+  function cancelPipePlacement(): void {
+    pipePlacing.value = false
+  }
+
+  function placePipes(cells: Array<{ x: number; y: number }>): void {
+    const def = COMPONENT_DEFS.get('pipe')
+    if (def === undefined || !techTree.isComponentUnlocked('pipe') || cells.length === 0) return
+    const placeable = cells.filter((cell) => isAreaFree(cell.x, cell.y, 1, 1, null))
+    if (placeable.length === 0) {
+      showToast('所选位置都已被占用')
+      return
+    }
+    const price = (settings.freePurchases ? 0 : sim.getComponentPrice(def)) * placeable.length
+    if (sim.economy.money < price) {
+      showToast('资金不足')
+      return
+    }
+    sim.economy.money -= price
+    sim.registerPurchase(def)
+    for (const cell of placeable) {
+      const pipe = createComponentById('pipe')
+      pipe.x = cell.x
+      pipe.y = cell.y
+      sim.addComponent(pipe)
+    }
+    refreshSnapshot()
+  }
+
+  function placePhotonScreen(rect: { x: number; y: number; width: number; height: number }): void {
+    const def = COMPONENT_DEFS.get('photon_screen')
+    if (def === undefined || !techTree.isComponentUnlocked('photon_screen')) return
+    if (!isAreaFree(rect.x, rect.y, rect.width, rect.height, null)) {
+      showToast('该区域已有其他元件')
+      return
+    }
+    const unitPrice = settings.freePurchases ? 0 : sim.getComponentPrice(def)
+    const price = unitPrice * rect.width * rect.height
+    if (sim.economy.money < price) {
+      showToast('资金不足')
+      return
+    }
+    sim.economy.money -= price
+    sim.registerPurchase(def)
+    const component = createComponentById('photon_screen')
+    component.width = rect.width
+    component.height = rect.height
+    component.x = rect.x
+    component.y = rect.y
+    sim.addComponent(component)
+    screenPlacing.value = false
+    refreshSnapshot()
+  }
+
+  function registerBoardRect(screenToWorld: ((clientX: number, clientY: number) => { x: number; y: number } | null) | null): void {
+    boardScreenToWorld = screenToWorld
   }
 
   function startShopDrag(defId: string): void {
+    screenPlacing.value = false
+    pipePlacing.value = false
     if (defId === 'chain_drive') {
       startChainPlacement()
+      return
+    }
+    if (defId === 'photon_screen') {
+      screenPlacing.value = true
+      return
+    }
+    if (defId === 'pipe') {
+      pipePlacing.value = true
       return
     }
     const def = COMPONENT_DEFS.get(defId)
     if (def === undefined || !techTree.isComponentUnlocked(defId)) return
     if (!settings.freePurchases && sim.economy.money < sim.getComponentPrice(def)) return
-    dragPlace.value = { defId, cellX: -1, cellY: -1 }
+    dragPlace.value = { defId, cellX: Number.NaN, cellY: Number.NaN, px: Number.NaN, py: Number.NaN }
   }
 
   function updateShopDrag(clientX: number, clientY: number): void {
     const drag = dragPlace.value
-    if (drag === null || boardRectGetter === null) return
-    const rect = boardRectGetter()
-    if (rect === null) return
-    const scaleX = GRID_COLS * CELL_SIZE / Math.max(1, rect.width)
-    const scaleY = GRID_ROWS * CELL_SIZE / Math.max(1, rect.height)
-    const x = (clientX - rect.left) * scaleX
-    const y = (clientY - rect.top) * scaleY
-    const cellX = Math.floor(x / CELL_SIZE)
-    const cellY = Math.floor(y / CELL_SIZE)
-    if (cellX < 0 || cellX >= GRID_COLS || cellY < 0 || cellY >= GRID_ROWS) {
-      dragPlace.value = { ...drag, cellX: -1, cellY: -1 }
+    if (drag === null || boardScreenToWorld === null) return
+    const world = boardScreenToWorld(clientX, clientY)
+    if (world === null) {
+      dragPlace.value = { ...drag, cellX: Number.NaN, cellY: Number.NaN, px: Number.NaN, py: Number.NaN }
       return
     }
-    dragPlace.value = { ...drag, cellX, cellY }
+    dragPlace.value = {
+      ...drag,
+      cellX: Math.floor(world.x / CELL_SIZE),
+      cellY: Math.floor(world.y / CELL_SIZE),
+      px: world.x,
+      py: world.y,
+    }
   }
 
   function endShopDrag(): void {
     const drag = dragPlace.value
     dragPlace.value = null
-    if (drag === null || drag.cellX < 0) return
+    if (drag === null) return
+    if (drag.defId === 'free_terminal') {
+      if (Number.isFinite(drag.px)) placeFreeTerminal(drag.px, drag.py)
+      return
+    }
+    if (!Number.isFinite(drag.cellX)) return
     tryPlaceAt(drag.defId, drag.cellX, drag.cellY)
+  }
+
+  function placeFreeTerminal(px: number, py: number): void {
+    const def = COMPONENT_DEFS.get('free_terminal')
+    if (def === undefined || !techTree.isComponentUnlocked('free_terminal')) return
+    const price = settings.freePurchases ? 0 : sim.getComponentPrice(def)
+    if (sim.economy.money < price) {
+      showToast('资金不足')
+      return
+    }
+    sim.economy.money -= price
+    sim.registerPurchase(def)
+    const terminal = createComponentById('free_terminal')
+    if (!(terminal instanceof FreeTerminalComponent)) return
+    terminal.setFreePosition(px, py)
+    sim.addComponent(terminal)
+    refreshSnapshot()
+  }
+
+  function moveFreeTerminal(component: BaseComponent, px: number, py: number): void {
+    if (!(component instanceof FreeTerminalComponent)) return
+    const dx = px - component.posX
+    const dy = py - component.posY
+    if (dx === 0 && dy === 0) return
+    component.setFreePosition(px, py)
+    translateLinkedAnchors(component, dx, dy)
+    refreshSnapshot()
   }
 
   function translateLinkedAnchors(component: BaseComponent, dx: number, dy: number): void {
@@ -707,6 +840,10 @@ export const useGameStore = defineStore('game', () => {
       sim.economy.money += chain.def.price * SELL_REFUND_RATIO
       sim.unregisterPurchase(chain.def)
     }
+    const pending = wirePendingPort.value
+    if (pending !== null && (pending.owner === component || wires.has(pending.owner as WireComponent))) {
+      wirePendingPort.value = null
+    }
     if (selectedComponent.value === component || (selectedComponent.value !== null && wires.has(selectedComponent.value as WireComponent))) {
       selectedComponent.value = null
       selectedInfo.value = null
@@ -757,6 +894,27 @@ export const useGameStore = defineStore('game', () => {
       selected.randomizeCellConfig()
       refreshSnapshot()
     }
+  }
+
+  function setElectronGunAim(angle: number): void {
+    const selected = selectedComponent.value
+    if (!(selected instanceof ElectronGunComponent)) return
+    selected.aimAngle = Math.min(Math.PI * 2, Math.max(0, angle))
+    refreshSnapshot()
+  }
+
+  function setElectronGunSpeed(speed: number): void {
+    const selected = selectedComponent.value
+    if (!(selected instanceof ElectronGunComponent)) return
+    selected.launchSpeed = Math.min(700, Math.max(50, speed))
+    refreshSnapshot()
+  }
+
+  function setPhotonScreenDirection(direction: PhotonPropagation): void {
+    const selected = selectedComponent.value
+    if (!(selected instanceof PhotonScreenComponent)) return
+    selected.propagation = direction
+    refreshSnapshot()
   }
 
   function renameFourthGenerator(name: string): void {
@@ -816,6 +974,13 @@ export const useGameStore = defineStore('game', () => {
     cancelChainPlacement,
     chainPlacing,
     chainFirstGear,
+    screenPlacing,
+    cancelScreenPlacement,
+    pipePlacing,
+    cancelPipePlacement,
+    placePipes,
+    placePhotonScreen,
+    moveFreeTerminal,
     toast,
     getClickProgress,
     registerBoardRect,
@@ -832,6 +997,9 @@ export const useGameStore = defineStore('game', () => {
     toggleSwitch,
     toggleMonitor,
     randomizeBattery,
+    setElectronGunAim,
+    setElectronGunSpeed,
+    setPhotonScreenDirection,
     addMoney,
     debugUnlockEnder,
     debugUnlockAllTech,

@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest'
+﻿﻿﻿﻿import { describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { EnergyType } from '../src/core/energy/EnergyType'
 import { useGameStore } from '../src/ui/stores/useGameStore'
@@ -10,7 +10,7 @@ import { BatteryComponent } from '../src/core/components/behaviors/BatteryCompon
 import { Simulation } from '../src/core/sim/Simulation'
 import type { BaseComponent } from '../src/core/components/BaseComponent'
 import { portPosition } from '../src/ui/board/boardMath'
-import { buildBatteryLoop, buildConverterLoop, buildFieldPair, buildKineticPair, buildOverloadLoop, buildSimpleLoop, buildSwitchLoop } from './helpers'
+import { buildBatteryLoop, buildConverterLoop, buildFieldPair, buildMotorPair, buildOverloadLoop, buildSimpleLoop, buildSwitchLoop } from './helpers'
 
 describe('Converters and systems', () => {
   it('secondary battery charges when source + terminal feeds battery + terminal, discharges when reversed', () => {
@@ -82,14 +82,14 @@ describe('Converters and systems', () => {
     expect(sim.economy.money).toBeGreaterThan(victim.def.price * 0.1)
   })
 
-  it('motor charges kinetic pool and turbine drains it', () => {
-    const { sim, motor, turbine } = buildKineticPair()
-    for (let i = 0; i < 20; i++) {
+  it('motor drives adjacent gear as mechanical rotation source', () => {
+    const { sim, motor, gear } = buildMotorPair()
+    for (let i = 0; i < 60; i++) {
       sim.tick()
     }
-    expect(sim.kineticPool).toBeGreaterThan(0)
-    expect(Math.abs(turbine.current)).toBeGreaterThan(0)
     expect(motor.current).not.toBe(0)
+    expect(Math.abs(gear.rotationSpeed)).toBeGreaterThan(0.1)
+    expect(Math.sign(gear.rotationSpeed)).toBe(-Math.sign(motor.current))
   })
 
   it('lamp light reaches photocell and produces current', () => {

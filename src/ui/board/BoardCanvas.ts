@@ -4,13 +4,27 @@ import { ChainDriveComponent } from '../../core/components/behaviors/ChainDriveC
 import { BatteryComponent } from '../../core/components/behaviors/BatteryComponent'
 import { SwitchComponent } from '../../core/components/behaviors/SwitchComponent'
 import { GearComponent } from '../../core/components/behaviors/GearComponent'
+import { ClutchComponent } from '../../core/components/behaviors/ClutchComponent'
+import { FreeTerminalComponent } from '../../core/components/behaviors/FreeTerminalComponent'
 import { RheostatComponent } from '../../core/components/behaviors/RheostatComponent'
 import { FourthGeneratorComponent } from '../../core/components/behaviors/FourthGeneratorComponent'
 import { VoltageTransformerComponent } from '../../core/components/behaviors/VoltageTransformerComponent'
 import { FieldSensorComponent } from '../../core/components/behaviors/FieldSensorComponent'
 import { EnergyType } from '../../core/energy/EnergyType'
-import type { EnergyEvent } from '../../core/sim/Simulation'
-import { CELL_SIZE, GRID_COLS, GRID_ROWS, componentAt, portPosition } from './boardMath'
+import type { EnergyEvent, ElectronLaunch, FluidEmission } from '../../core/sim/Simulation'
+import type { PipeNetwork } from '../../core/fluids/pipeSystem'
+import { getFluid } from '../../core/fluids/fluids'
+import { PhotonScreenComponent } from '../../core/components/behaviors/PhotonScreenComponent'
+import { ElectronGunComponent } from '../../core/components/behaviors/ElectronGunComponent'
+import { PipeComponent } from '../../core/components/behaviors/PipeComponent'
+import { TankComponent } from '../../core/components/behaviors/TankComponent'
+import { CondenserComponent } from '../../core/components/behaviors/CondenserComponent'
+import { SteamEngineComponent } from '../../core/components/behaviors/SteamEngineComponent'
+import { TurbineComponent } from '../../core/components/behaviors/TurbineComponent'
+import { MotorComponent } from '../../core/components/behaviors/MotorComponent'
+import { FluidParticle, integrateFluidParticles, fluidReceptors } from './fluidParticles'
+import { buildFluidLinks, interfaceCell, interfaceKey, interfaceWorldPos } from '../../core/fluids/fluidInterface'
+import { CELL_SIZE, componentAt, portPosition } from './boardMath'
 import { useSettingsStore, formatWithPrefix, formatAngularValue } from '../settings/useSettingsStore'
 import { traceMagneticFieldLines, collectMagneticSources, magneticFieldVector } from './magneticFieldLines'
 import { collectChargeSources, electricFieldAt, traceElectricFieldLines, computeIsolines } from './electricFieldView'
@@ -19,16 +33,26 @@ import { ChargedParticle, integrateParticles, LAUNCH_SPEED_MAX, PARTICLE_TIME_SC
 
 export interface BoardCallbacks {
   getComponents(): BaseComponent[]
-  getDragGhost(): { cellX: number; cellY: number } | null
+  getDragGhost(): { defId: string; cellX: number; cellY: number; px: number; py: number } | null
   getWirePending(): { owner: BaseComponent; portIndex: number; color: string | null } | null
   getChainPlacement(): { first: { x: number; y: number } | null } | null
   getSelected(): BaseComponent | null
   getClickProgress(): number
   drainEnergyEvents(): EnergyEvent[]
+  drainElectronLaunches(): ElectronLaunch[]
+  getScreenPlacing(): boolean
+  onScreenPlace(rect: { x: number; y: number; width: number; height: number }): void
+  getPipePlacing(): boolean
+  onPipePlace(cells: Array<{ x: number; y: number }>): void
+  getPipeNetworks(): PipeNetwork[]
+  getPipeNetwork(pipe: PipeComponent): PipeNetwork | null
+  drainFluidEmissions(): FluidEmission[]
+  onFreeTerminalMove(component: BaseComponent, px: number, py: number): void
   getLockedComponents(): BaseComponent[]
   getSimTime(): number
   onComponentClick(component: BaseComponent): void
   onComponentMove(component: BaseComponent, cellX: number, cellY: number): void
+  onComponentDropAtScreen(clientX: number, clientY: number, component: BaseComponent): void
   onPortClick(component: BaseComponent, portIndex: number): void
   onToggleMonitor(component: BaseComponent): void
   onBlankClick(x: number, y: number): void
@@ -68,6 +92,10 @@ const FIELD_COLORS: Record<string, string> = {
 const WIRE_PICK_COLORS = ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c', '#3498db', '#9b59b6', '#e84393']
 
 const LORENTZ_THRESHOLD = 0.001
+
+const ZOOM_MIN = 0.3
+const ZOOM_MAX = 3
+const VIEWPORT_MARGIN = 120
 
 const ELECTRODE_COLORS: Record<string, string> = {
   '铅 Pb': '#546e7a',
@@ -136,6 +164,18 @@ export class BoardCanvas {
   private animationHandle = 0
   private mouseX = -1
   private mouseY = -1
+  private mouseInside = false
+  private panX = 0
+  private panY = 0
+  private zoom = 1
+  private panning: { startCssX: number; startCssY: number; startPanX: number; startPanY: number; moved: boolean } | null = null
+  private screenRectDrag: { startX: number; startY: number } | null = null
+  private screenRectPreview: { x: number; y: number; width: number; height: number } | null = null
+  private terminalDrag: { component: FreeTerminalComponent; grabDX: number; grabDY: number; moved: boolean } | null = null
+  private pipePathDrag: { startX: number; startY: number } | null = null
+  private pipePathPreview: Array<{ x: number; y: number }> | null = null
+  private readonly fluidParticles: FluidParticle[] = []
+  private resizeObserver: ResizeObserver | null = null
   private time = 0
   private dragging: { wire: WireComponent; end: 'cpA' | 'cpB' } | null = null
   private dragComponent: { component: BaseComponent; grabDX: number; grabDY: number; lastCellX: number; lastCellY: number; moved: boolean } | null = null
@@ -145,7 +185,7 @@ export class BoardCanvas {
   private hoverCandidates: BaseComponent[] = []
   private hoverPickIndex = 0
   private tabHeld = false
-  private spaceHeld = false
+  private spaceKeyHeld = false
   private spaceLocked = false
   private lastSpaceDown = 0
   private mouseCharge = 5
@@ -167,8 +207,9 @@ export class BoardCanvas {
     const context = canvas.getContext('2d')
     if (context === null) throw new Error('canvas 2d context unavailable')
     this.ctx = context
-    canvas.width = GRID_COLS * CELL_SIZE
-    canvas.height = GRID_ROWS * CELL_SIZE
+    this.resizeCanvas()
+    this.resizeObserver = new ResizeObserver(() => this.resizeCanvas())
+    this.resizeObserver.observe(canvas)
     canvas.addEventListener('mousemove', this.handleMouseMove)
     canvas.addEventListener('mouseleave', this.handleMouseLeave)
     canvas.addEventListener('mousedown', this.handleMouseDown)
@@ -184,6 +225,10 @@ export class BoardCanvas {
 
   dispose(): void {
     this.stop()
+    if (this.resizeObserver !== null) {
+      this.resizeObserver.disconnect()
+      this.resizeObserver = null
+    }
     this.canvas.removeEventListener('mousemove', this.handleMouseMove)
     this.canvas.removeEventListener('mouseleave', this.handleMouseLeave)
     this.canvas.removeEventListener('mousedown', this.handleMouseDown)
@@ -209,31 +254,68 @@ export class BoardCanvas {
     cancelAnimationFrame(this.animationHandle)
   }
 
-  private toCanvasCoords(event: MouseEvent): { x: number; y: number } {
+  private resizeCanvas(): void {
     const rect = this.canvas.getBoundingClientRect()
-    const scaleX = this.canvas.width / Math.max(1, rect.width)
-    const scaleY = this.canvas.height / Math.max(1, rect.height)
-    return { x: (event.clientX - rect.left) * scaleX, y: (event.clientY - rect.top) * scaleY }
+    const dpr = window.devicePixelRatio || 1
+    const width = Math.max(1, Math.round(rect.width * dpr))
+    const height = Math.max(1, Math.round(rect.height * dpr))
+    if (this.canvas.width !== width || this.canvas.height !== height) {
+      this.canvas.width = width
+      this.canvas.height = height
+    }
+  }
+
+  private devicePixelRatio(): number {
+    return window.devicePixelRatio || 1
+  }
+
+  screenToWorld(clientX: number, clientY: number): { x: number; y: number } {
+    const rect = this.canvas.getBoundingClientRect()
+    return {
+      x: (clientX - rect.left - this.panX) / this.zoom,
+      y: (clientY - rect.top - this.panY) / this.zoom,
+    }
+  }
+
+  private worldView(): { x0: number; y0: number; x1: number; y1: number } {
+    const dpr = this.devicePixelRatio()
+    const cssW = this.canvas.width / dpr
+    const cssH = this.canvas.height / dpr
+    return {
+      x0: -this.panX / this.zoom,
+      y0: -this.panY / this.zoom,
+      x1: (cssW - this.panX) / this.zoom,
+      y1: (cssH - this.panY) / this.zoom,
+    }
+  }
+
+  private toCanvasCoords(event: MouseEvent): { x: number; y: number } {
+    return this.screenToWorld(event.clientX, event.clientY)
   }
 
   private handleMouseMove = (event: MouseEvent): void => {
     const coords = this.toCanvasCoords(event)
     this.mouseX = coords.x
     this.mouseY = coords.y
+    this.mouseInside = true
     const hit = this.hitTest()
     this.hoverComponent = hit.kind === 'component' ? hit.component : null
     this.updateHoverCandidates()
   }
 
+  private get spaceHeld(): boolean {
+    return this.spaceKeyHeld || this.settings.electricFieldMode
+  }
+
   private updateHoverCandidates(): void {
     const busy = this.dragComponent !== null || this.dragging !== null || this.sliderDrag !== null || this.heldCrank !== null || this.spaceHeld
-    if (busy || this.mouseX < 0 || this.mouseY < 0) {
+    if (busy || !this.mouseInside) {
       this.hoverCandidates = []
       return
     }
     const candidates: BaseComponent[] = []
     const cell = this.mouseCell()
-    if (cell.cellX >= 0 && cell.cellX < GRID_COLS && cell.cellY >= 0 && cell.cellY < GRID_ROWS) {
+    {
       const component = componentAt(this.callbacks.getComponents(), cell.cellX, cell.cellY)
       if (component !== null) candidates.push(component)
     }
@@ -261,11 +343,24 @@ export class BoardCanvas {
       this.chargeBarTimer = 2.2
       return
     }
-    if (this.hoverCandidates.length < 2) return
+    if (this.hoverCandidates.length >= 2) {
+      event.preventDefault()
+      const count = this.hoverCandidates.length
+      const step = event.deltaY > 0 ? 1 : -1
+      this.hoverPickIndex = (this.hoverPickIndex + step + count) % count
+      return
+    }
+    if (event.deltaY === 0) return
     event.preventDefault()
-    const count = this.hoverCandidates.length
-    const step = event.deltaY > 0 ? 1 : -1
-    this.hoverPickIndex = (this.hoverPickIndex + step + count) % count
+    const rect = this.canvas.getBoundingClientRect()
+    const cssX = event.clientX - rect.left
+    const cssY = event.clientY - rect.top
+    const worldX = (cssX - this.panX) / this.zoom
+    const worldY = (cssY - this.panY) / this.zoom
+    const factor = event.deltaY > 0 ? 0.9 : 1.1
+    this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * factor))
+    this.panX = cssX - worldX * this.zoom
+    this.panY = cssY - worldY * this.zoom
   }
 
   private collectWireHits(components: BaseComponent[]): WireComponent[] {
@@ -288,13 +383,43 @@ export class BoardCanvas {
   }
 
   private handleMouseLeave = (): void => {
+    this.mouseInside = false
     this.hoverComponent = null
   }
 
   private handleWindowMouseMove = (event: MouseEvent): void => {
-    const coords = this.toCanvasCoords(event)
+    const rect = this.canvas.getBoundingClientRect()
+    const cssX = event.clientX - rect.left
+    const cssY = event.clientY - rect.top
+    this.mouseInside = cssX >= 0 && cssY >= 0 && cssX <= rect.width && cssY <= rect.height
+    const coords = this.screenToWorld(event.clientX, event.clientY)
     this.mouseX = coords.x
     this.mouseY = coords.y
+    if (this.panning !== null) {
+      const pan = this.panning
+      const dx = cssX - pan.startCssX
+      const dy = cssY - pan.startCssY
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) pan.moved = true
+      this.panX = pan.startPanX + dx
+      this.panY = pan.startPanY + dy
+      return
+    }
+    if (this.screenRectDrag !== null) {
+      this.updateScreenRectPreview()
+      return
+    }
+    if (this.terminalDrag !== null) {
+      const drag = this.terminalDrag
+      const px = this.mouseX - drag.grabDX
+      const py = this.mouseY - drag.grabDY
+      if (Math.hypot(px - drag.component.posX, py - drag.component.posY) > 3) drag.moved = true
+      if (drag.moved) this.callbacks.onFreeTerminalMove(drag.component, px, py)
+      return
+    }
+    if (this.pipePathDrag !== null) {
+      this.updatePipePathPreview()
+      return
+    }
     if (this.aiming !== null) {
       const dx = this.mouseX - this.aiming.pressX
       const dy = this.mouseY - this.aiming.pressY
@@ -312,7 +437,7 @@ export class BoardCanvas {
       const drag = this.dragComponent
       const cellX = Math.round((this.mouseX - drag.grabDX) / CELL_SIZE)
       const cellY = Math.round((this.mouseY - drag.grabDY) / CELL_SIZE)
-      if (cellX >= 0 && cellX < GRID_COLS && cellY >= 0 && cellY < GRID_ROWS && (cellX !== drag.lastCellX || cellY !== drag.lastCellY)) {
+      if (cellX !== drag.lastCellX || cellY !== drag.lastCellY) {
         drag.lastCellX = cellX
         drag.lastCellY = cellY
         drag.moved = true
@@ -322,7 +447,36 @@ export class BoardCanvas {
     }
   }
 
-  private handleWindowMouseUp = (): void => {
+  private handleWindowMouseUp = (event: MouseEvent): void => {
+    if (this.terminalDrag !== null) {
+      const drag = this.terminalDrag
+      this.terminalDrag = null
+      if (!drag.moved) this.callbacks.onPortClick(drag.component, 0)
+      return
+    }
+    if (this.screenRectDrag !== null) {
+      const preview = this.screenRectPreview
+      this.screenRectDrag = null
+      this.screenRectPreview = null
+      if (preview !== null && this.callbacks.getScreenPlacing()) this.callbacks.onScreenPlace(preview)
+      return
+    }
+    if (this.pipePathDrag !== null) {
+      const cells = this.pipePathPreview
+      this.pipePathDrag = null
+      this.pipePathPreview = null
+      if (cells !== null && cells.length > 0 && this.callbacks.getPipePlacing()) this.callbacks.onPipePlace(cells)
+      return
+    }
+    if (this.panning !== null) {
+      const pan = this.panning
+      this.panning = null
+      this.canvas.style.cursor = ''
+      if (!pan.moved) {
+        this.callbacks.onBlankClick(this.mouseX / CELL_SIZE, this.mouseY / CELL_SIZE)
+      }
+      return
+    }
     if (this.aiming !== null) this.aiming = null
     if (this.charging !== null) {
       this.launchParticle(this.charging.progress)
@@ -335,10 +489,13 @@ export class BoardCanvas {
       this.heldCrank = null
     }
     if (this.dragComponent !== null) {
-      if (!this.dragComponent.moved && this.dragComponent.component instanceof SwitchComponent) {
-        this.dragComponent.component.closed = !this.dragComponent.component.closed
-      }
+      const drag = this.dragComponent
       this.dragComponent = null
+      if (!drag.moved && drag.component instanceof SwitchComponent) {
+        drag.component.closed = !drag.component.closed
+      } else if (drag.moved) {
+        this.callbacks.onComponentDropAtScreen(event.clientX, event.clientY, drag.component)
+      }
     }
   }
 
@@ -353,14 +510,77 @@ export class BoardCanvas {
     }
   }
 
+  private startPan(event: MouseEvent): void {
+    const rect = this.canvas.getBoundingClientRect()
+    this.panning = {
+      startCssX: event.clientX - rect.left,
+      startCssY: event.clientY - rect.top,
+      startPanX: this.panX,
+      startPanY: this.panY,
+      moved: false,
+    }
+    this.canvas.style.cursor = 'grabbing'
+  }
+
+  private updateScreenRectPreview(): void {
+    const drag = this.screenRectDrag
+    if (drag === null) return
+    const startX = Math.floor(drag.startX / CELL_SIZE)
+    const startY = Math.floor(drag.startY / CELL_SIZE)
+    const endX = Math.floor(this.mouseX / CELL_SIZE)
+    const endY = Math.floor(this.mouseY / CELL_SIZE)
+    this.screenRectPreview = {
+      x: Math.min(startX, endX),
+      y: Math.min(startY, endY),
+      width: Math.abs(endX - startX) + 1,
+      height: Math.abs(endY - startY) + 1,
+    }
+  }
+
+  private drawScreenPreview(): void {
+    const rect = this.screenRectPreview
+    if (rect === null) return
+    const ctx = this.ctx
+    const x = rect.x * CELL_SIZE
+    const y = rect.y * CELL_SIZE
+    const w = rect.width * CELL_SIZE
+    const h = rect.height * CELL_SIZE
+    ctx.fillStyle = 'rgba(255, 213, 79, 0.16)'
+    ctx.beginPath()
+    ctx.roundRect(x, y, w, h, 6)
+    ctx.fill()
+    ctx.strokeStyle = '#ffd54f'
+    ctx.lineWidth = 1.5
+    ctx.setLineDash([6, 4])
+    ctx.stroke()
+    ctx.setLineDash([])
+    ctx.fillStyle = '#ffd54f'
+    ctx.font = 'bold 12px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(`${rect.width}×${rect.height}`, x + w / 2, y - 8)
+    ctx.textAlign = 'start'
+  }
+
   private handleMouseDown = (event: MouseEvent): void => {
     if (event.button !== 0 && event.button !== 2) return
+    event.preventDefault()
     const coords = this.toCanvasCoords(event)
     this.mouseX = coords.x
     this.mouseY = coords.y
     if (this.spaceHeld) {
       if (event.button === 0) this.charging = { progress: 0 }
       if (event.button === 2) this.aiming = { pressX: coords.x, pressY: coords.y }
+      return
+    }
+    if (event.button === 0 && this.callbacks.getScreenPlacing()) {
+      this.screenRectDrag = { startX: this.mouseX, startY: this.mouseY }
+      this.screenRectPreview = null
+      this.updateScreenRectPreview()
+      return
+    }
+    if (event.button === 0 && this.callbacks.getPipePlacing()) {
+      this.pipePathDrag = { startX: this.mouseX, startY: this.mouseY }
+      this.updatePipePathPreview()
       return
     }
     this.updateHoverCandidates()
@@ -383,6 +603,23 @@ export class BoardCanvas {
         return
       }
     }
+    if (event.button === 0) {
+      const terminal = this.freeTerminalHit(this.callbacks.getComponents())
+      if (terminal !== null) {
+        if (this.callbacks.getWirePending() !== null) {
+          this.callbacks.onPortClick(terminal, 0)
+          return
+        }
+        this.callbacks.onComponentClick(terminal)
+        this.terminalDrag = {
+          component: terminal,
+          grabDX: this.mouseX - terminal.posX,
+          grabDY: this.mouseY - terminal.posY,
+          moved: false,
+        }
+        return
+      }
+    }
     const hit = this.hitTest()
     if (event.button === 2) {
       if (hit.kind === 'component' && hit.component.def.behaviorTags['holdable'] === '1') {
@@ -398,7 +635,7 @@ export class BoardCanvas {
     if (event.button === 0 && this.hoverCandidates.length > 0) {
       const picked = this.hoverCandidates[this.hoverPickIndex] ?? this.hoverCandidates[0]
       if (picked === undefined) {
-        this.callbacks.onBlankClick(this.mouseX / CELL_SIZE, this.mouseY / CELL_SIZE)
+        this.startPan(event)
         return
       }
       if (this.tabHeld) {
@@ -424,7 +661,7 @@ export class BoardCanvas {
       }
       return
     }
-    this.callbacks.onBlankClick(this.mouseX / CELL_SIZE, this.mouseY / CELL_SIZE)
+    this.startPan(event)
   }
 
   private handleContextMenu = (event: MouseEvent): void => {
@@ -445,12 +682,12 @@ export class BoardCanvas {
       const now = performance.now()
       if (this.spaceLocked) {
         this.spaceLocked = false
-        this.spaceHeld = false
+        this.spaceKeyHeld = false
       } else if (now - this.lastSpaceDown < 300) {
         this.spaceLocked = true
-        this.spaceHeld = true
+        this.spaceKeyHeld = true
       } else {
-        this.spaceHeld = true
+        this.spaceKeyHeld = true
       }
       this.lastSpaceDown = now
     }
@@ -458,12 +695,12 @@ export class BoardCanvas {
 
   private handleKeyUp = (event: KeyboardEvent): void => {
     if (event.key === 'Tab') this.tabHeld = false
-    if (event.key === ' ' && !this.spaceLocked) this.spaceHeld = false
+    if (event.key === ' ' && !this.spaceLocked) this.spaceKeyHeld = false
   }
 
   private handleWindowBlur = (): void => {
     this.tabHeld = false
-    if (!this.spaceLocked) this.spaceHeld = false
+    if (!this.spaceLocked) this.spaceKeyHeld = false
     this.charging = null
     this.aiming = null
   }
@@ -493,9 +730,10 @@ export class BoardCanvas {
     | { kind: 'component'; component: BaseComponent }
     | { kind: 'wire'; wire: WireComponent }
     | { kind: 'none' } {
-    if (this.mouseX < 0 || this.mouseY < 0) return { kind: 'none' }
+    if (!this.mouseInside) return { kind: 'none' }
     const components = this.callbacks.getComponents()
     for (const component of components) {
+      if (component instanceof WireComponent || component instanceof FreeTerminalComponent) continue
       for (let index = 0; index < component.ports.length; index++) {
         const pos = portPosition(component, index)
         if (Math.hypot(pos.px - this.mouseX, pos.py - this.mouseY) <= 14) {
@@ -503,14 +741,24 @@ export class BoardCanvas {
         }
       }
     }
+    const terminal = this.freeTerminalHit(components)
+    if (terminal !== null) return { kind: 'component', component: terminal }
     const cell = this.mouseCell()
-    if (cell.cellX >= 0 && cell.cellX < GRID_COLS && cell.cellY >= 0 && cell.cellY < GRID_ROWS) {
+    {
       const component = componentAt(components, cell.cellX, cell.cellY)
       if (component !== null) return { kind: 'component', component }
     }
     const wire = this.wireCurveHit(components)
     if (wire !== null) return { kind: 'wire', wire }
     return { kind: 'none' }
+  }
+
+  private freeTerminalHit(components: BaseComponent[]): FreeTerminalComponent | null {
+    for (const component of components) {
+      if (!(component instanceof FreeTerminalComponent)) continue
+      if (Math.hypot(component.posX - this.mouseX, component.posY - this.mouseY) <= 12) return component
+    }
+    return null
   }
 
   private wireCurveHit(components: BaseComponent[]): WireComponent | null {
@@ -551,11 +799,15 @@ export class BoardCanvas {
   private render(): void {
     this.frameCount++
     const ctx = this.ctx
+    const dpr = this.devicePixelRatio()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
     ctx.fillStyle = '#10141b'
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
+    ctx.setTransform(dpr * this.zoom, 0, 0, dpr * this.zoom, dpr * this.panX, dpr * this.panY)
     this.drawGrid()
     this.drawFields()
+    this.spawnElectrons()
     if (this.spaceHeld || this.particles.length > 0) {
       this.cachedSources = collectChargeSources(this.callbacks.getComponents(), this.particles)
     }
@@ -563,16 +815,22 @@ export class BoardCanvas {
     this.drawWires()
     this.drawComponents()
     this.drawPorts()
+    this.drawFluidInterfaces()
     this.drawChains()
     this.drawWireHandles()
     this.drawPendingWire()
     this.drawChainPreview()
     this.drawDragGhost()
+    this.drawScreenPreview()
+    this.drawPipePathPreview()
+    this.drawPipeFlowAnimation()
     this.drawClickCooldownRing()
     this.updateFloats()
     this.drawFloats()
     this.updateParticles()
     this.drawParticles()
+    this.updateFluidParticles(1 / 60)
+    this.drawFluidParticles()
     this.drawHoverTooltip()
     this.drawMonitoredTooltips()
     this.drawIntersectionPanel()
@@ -581,12 +839,40 @@ export class BoardCanvas {
     if (this.chargeBarTimer > 0) this.chargeBarTimer = Math.max(0, this.chargeBarTimer - 1 / 60)
   }
 
+  private spawnElectrons(): void {
+    for (const launch of this.callbacks.drainElectronLaunches()) {
+      if (this.particles.length >= 80) this.particles.shift()
+      this.particles.push(new ChargedParticle(launch.x, launch.y, launch.vx, launch.vy, -1))
+    }
+  }
+
   private updateParticles(): void {
     if (this.particles.length === 0) return
     integrateParticles(this.particles, this.cachedSources, (1 / 60) * PARTICLE_TIME_SCALE)
-    const width = this.canvas.width
-    const height = this.canvas.height
-    this.particles = this.particles.filter((particle) => particle.x > -80 && particle.x < width + 80 && particle.y > -80 && particle.y < height + 80)
+    const view = this.worldView()
+    const x0 = view.x0 - VIEWPORT_MARGIN
+    const y0 = view.y0 - VIEWPORT_MARGIN
+    const x1 = view.x1 + VIEWPORT_MARGIN
+    const y1 = view.y1 + VIEWPORT_MARGIN
+    this.particles = this.particles.filter((particle) => particle.x > x0 && particle.x < x1 && particle.y > y0 && particle.y < y1)
+    if (this.particles.length === 0) return
+    const screens: PhotonScreenComponent[] = []
+    for (const component of this.callbacks.getComponents()) {
+      if (component instanceof PhotonScreenComponent) screens.push(component)
+    }
+    if (screens.length === 0) return
+    this.particles = this.particles.filter((particle) => {
+      for (const screen of screens) {
+        const sx = screen.x * CELL_SIZE
+        const sy = screen.y * CELL_SIZE
+        const sw = screen.width * CELL_SIZE
+        const sh = screen.height * CELL_SIZE
+        if (particle.x <= sx || particle.x >= sx + sw || particle.y <= sy || particle.y >= sy + sh) continue
+        screen.addSpot(particle.x - sx, particle.y - sy, this.time)
+        return false
+      }
+      return true
+    })
   }
 
   private launchParticle(progress: number): void {
@@ -663,8 +949,9 @@ export class BoardCanvas {
 
   private drawElectricFieldLayer(): void {
     if (this.frameCount % 2 === 0) {
-      this.cachedFieldLines = traceElectricFieldLines(this.cachedSources, this.canvas.width, this.canvas.height)
-      this.cachedIsolines = computeIsolines(this.cachedSources, this.canvas.width, this.canvas.height)
+      const bounds = this.worldView()
+      this.cachedFieldLines = traceElectricFieldLines(this.cachedSources, bounds)
+      this.cachedIsolines = computeIsolines(this.cachedSources, bounds)
     }
     const ctx = this.ctx
     ctx.lineCap = 'round'
@@ -799,8 +1086,9 @@ export class BoardCanvas {
       if (icon === undefined) continue
       const x = event.x * CELL_SIZE
       const y = event.y * CELL_SIZE
-      const clampedX = Math.max(20, Math.min(this.canvas.clientWidth - 20, x))
-      const clampedY = Math.max(20, Math.min(this.canvas.clientHeight - 20, y))
+      const view = this.worldView()
+      const clampedX = Math.max(view.x0 + 20, Math.min(view.x1 - 20, x))
+      const clampedY = Math.max(view.y0 + 20, Math.min(view.y1 - 20, y))
       this.floats.push({ x: clampedX, y: clampedY, text: `${icon}+${formatEnergy(event.amount)}J`, born: this.time })
     }
     while (this.floats.length > 40) this.floats.shift()
@@ -826,7 +1114,7 @@ export class BoardCanvas {
 
   private drawClickCooldownRing(): void {
     const progress = this.callbacks.getClickProgress()
-    if (progress >= 1 || this.mouseX < 0 || this.mouseY < 0) return
+    if (progress >= 1 || !this.mouseInside) return
     const ctx = this.ctx
     ctx.lineWidth = 3
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'
@@ -845,18 +1133,25 @@ export class BoardCanvas {
 
   private drawGrid(): void {
     const ctx = this.ctx
+    const view = this.worldView()
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)'
-    ctx.lineWidth = 1
-    for (let col = 0; col <= GRID_COLS; col++) {
+    ctx.lineWidth = 1 / this.zoom
+    const col0 = Math.floor(view.x0 / CELL_SIZE)
+    const col1 = Math.ceil(view.x1 / CELL_SIZE)
+    for (let col = col0; col <= col1; col++) {
+      const x = col * CELL_SIZE
       ctx.beginPath()
-      ctx.moveTo(col * CELL_SIZE, 0)
-      ctx.lineTo(col * CELL_SIZE, GRID_ROWS * CELL_SIZE)
+      ctx.moveTo(x, view.y0)
+      ctx.lineTo(x, view.y1)
       ctx.stroke()
     }
-    for (let row = 0; row <= GRID_ROWS; row++) {
+    const row0 = Math.floor(view.y0 / CELL_SIZE)
+    const row1 = Math.ceil(view.y1 / CELL_SIZE)
+    for (let row = row0; row <= row1; row++) {
+      const y = row * CELL_SIZE
       ctx.beginPath()
-      ctx.moveTo(0, row * CELL_SIZE)
-      ctx.lineTo(GRID_COLS * CELL_SIZE, row * CELL_SIZE)
+      ctx.moveTo(view.x0, y)
+      ctx.lineTo(view.x1, y)
       ctx.stroke()
     }
   }
@@ -883,7 +1178,8 @@ export class BoardCanvas {
 
   private drawMagneticFieldLines(): void {
     const ctx = this.ctx
-    const lines = traceMagneticFieldLines(this.callbacks.getComponents(), this.canvas.width, this.canvas.height)
+    const bounds = this.worldView()
+    const lines = traceMagneticFieldLines(this.callbacks.getComponents(), bounds)
     ctx.lineWidth = 1.4
     ctx.lineCap = 'round'
     for (const line of lines) {
@@ -1056,6 +1352,30 @@ export class BoardCanvas {
     for (const component of this.callbacks.getComponents()) {
       if (component instanceof WireComponent) continue
       if (component instanceof ChainDriveComponent) continue
+      if (component instanceof FreeTerminalComponent) {
+        this.drawFreeTerminal(component, selected)
+        continue
+      }
+      if (component instanceof PipeComponent) {
+        this.drawPipe(component)
+        continue
+      }
+      if (component instanceof TankComponent) {
+        this.drawTank(component, selected)
+        continue
+      }
+      if (component instanceof CondenserComponent) {
+        this.drawCondenser(component, selected)
+        continue
+      }
+      if (component instanceof TurbineComponent) {
+        this.drawTurbine(component)
+        continue
+      }
+      if (component instanceof SteamEngineComponent) {
+        this.drawSteamEngine(component)
+        continue
+      }
       const x = component.x * CELL_SIZE
       const y = component.y * CELL_SIZE
       const w = component.width * CELL_SIZE
@@ -1070,7 +1390,10 @@ export class BoardCanvas {
       else if (component instanceof SwitchComponent) fill = component.closed ? '#1e8e4e' : '#c0392b'
       const isGear = component.def.behaviorId === 'gear'
       const isRotatable = component.def.behaviorTags['rotatable'] === '1'
-      if (isRotatable) this.drawRealGear(component, x, y, w, h)
+      if (component instanceof MotorComponent) this.drawMotor(component, x, y, w, h)
+      else if (isRotatable) this.drawRealGear(component, x, y, w, h)
+      if (component instanceof ClutchComponent) this.drawClutch(component, x, y, w, h)
+      if (component.def.id === 'flywheel') this.drawFlywheelHub(x, y, w, h)
       if (!isGear) {
         const inset = isRotatable ? 13 : 4
         ctx.fillStyle = fill
@@ -1078,6 +1401,7 @@ export class BoardCanvas {
         ctx.roundRect(x + inset, y + inset, w - inset * 2, h - inset * 2, 6)
         ctx.fill()
       }
+      if (component instanceof PhotonScreenComponent) this.drawPhotonScreen(component, x, y, w, h)
       this.strokeState(component, x, y, w, h, selected, lockedSet)
       ctx.fillStyle = '#ecf0f1'
       ctx.font = '11px system-ui, sans-serif'
@@ -1091,12 +1415,13 @@ export class BoardCanvas {
       } else {
         const isRheostat = component instanceof RheostatComponent
         const isBattery = component instanceof BatteryComponent
-        this.drawFittedText(component.def.displayName, x + w / 2, isDiode || isMeter ? y + 10 : isRheostat || isBattery ? y + 14 : y + h / 2 + 4, w - 8)
+        this.drawFittedText(component.def.displayName, x + w / 2, isDiode || isMeter || component instanceof ElectronGunComponent || component instanceof PhotonScreenComponent ? y + 10 : isRheostat || isBattery ? y + 14 : y + h / 2 + 4, w - 8)
       }
       if (isDiode) this.drawDiodeSymbol(x, y, w, h)
       if (isMeter) this.drawMeterDial(component, x, y, w, h)
       if (component instanceof BatteryComponent) this.drawBatteryCell(component, x, y, w, h)
       if (component instanceof RheostatComponent) this.drawRheostatSlider(component)
+      if (component instanceof ElectronGunComponent) this.drawElectronGun(component, x, y, w, h)
       if (component instanceof VoltageTransformerComponent) {
         const gain = component.def.behaviorParams['gain'] ?? 2
         ctx.fillStyle = '#ffd54f'
@@ -1130,8 +1455,18 @@ export class BoardCanvas {
         lines.push('输入 V = ' + formatWithPrefix(component.getInputVoltage(), this.settings.prefixVoltage, 'V'))
         lines.push('输入 I = ' + formatWithPrefix(Math.abs(component.getInputCurrent()), this.settings.prefixCurrent, 'A'))
       }
+      if (component instanceof TurbineComponent) {
+        lines.push('蒸汽功率 = ' + (component.steamPower * 100).toFixed(0) + '%')
+      }
     } else {
       lines.push('不接电的机械元件')
+      if (component instanceof PipeComponent) {
+        const network = this.callbacks.getPipeNetwork(component)
+        if (network !== null) {
+          lines.push('流体 = ' + (network.fluidId === null ? '空' : getFluid(network.fluidId).displayName))
+          lines.push('流速 = ' + network.flowRate.toFixed(1) + '/s')
+        }
+      }
     }
     if (isRotatable) {
       lines.push('转速 = ' + formatAngularValue(component.rotationSpeed, this.settings.angularUnit))
@@ -1181,7 +1516,8 @@ export class BoardCanvas {
       let px = centerX - boxW / 2
       let py = top - boxH - 10
       if (py < 4) py = top + component.height * CELL_SIZE + 10
-      px = Math.max(4, Math.min(this.canvas.width - boxW - 4, px))
+      const view = this.worldView()
+      px = Math.max(view.x0 + 4, Math.min(view.x1 - boxW - 4, px))
       this.drawTooltipAt(lines, px, py, component instanceof WireComponent ? component.getVisualColor() : null)
     }
   }
@@ -1203,13 +1539,15 @@ export class BoardCanvas {
     let px: number
     let py: number
     if (pinned) {
-      px = this.canvas.width / 2 - boxW / 2
-      py = this.canvas.height / 2 - boxH / 2
+      const view = this.worldView()
+      px = (view.x0 + view.x1) / 2 - boxW / 2
+      py = (view.y0 + view.y1) / 2 - boxH / 2
     } else {
+      const view = this.worldView()
       px = this.mouseX + 14
       py = this.mouseY + 14
-      if (px + boxW > this.canvas.clientWidth) px = this.mouseX - boxW - 10
-      if (py + boxH > this.canvas.clientHeight) py = this.mouseY - boxH - 10
+      if (px + boxW > view.x1) px = this.mouseX - boxW - 10
+      if (py + boxH > view.y1) py = this.mouseY - boxH - 10
     }
     this.drawTooltipAt(lines, px, py, component instanceof WireComponent ? component.getVisualColor() : null)
   }
@@ -1224,13 +1562,14 @@ export class BoardCanvas {
     )
     let width = 0
     for (const row of rows) width = Math.max(width, ctx.measureText(row).width)
-    width = Math.max(width, ctx.measureText('滚轮切换 · 点击选中').width)
+    width = Math.max(width, ctx.measureText('Shift+滚轮切换 · 点击选中').width)
     const boxW = width + 26
     const boxH = rows.length * 18 + 30
     let px = this.mouseX + 16
     let py = this.mouseY + 16
-    if (px + boxW > this.canvas.clientWidth) px = this.mouseX - boxW - 12
-    if (py + boxH > this.canvas.clientHeight) py = this.mouseY - boxH - 12
+    const view = this.worldView()
+    if (px + boxW > view.x1) px = this.mouseX - boxW - 12
+    if (py + boxH > view.y1) py = this.mouseY - boxH - 12
     ctx.fillStyle = 'rgba(20, 26, 38, 0.94)'
     ctx.strokeStyle = '#3a4a63'
     ctx.lineWidth = 1
@@ -1331,6 +1670,394 @@ export class BoardCanvas {
     ctx.fillText(text, cx, cy + 3)
   }
 
+  private readonly clutchLift = new WeakMap<ClutchComponent, number>()
+
+  private drawClutch(component: ClutchComponent, x: number, y: number, w: number, h: number): void {
+    const ctx = this.ctx
+    const target = component.engaged ? 0 : 1
+    const current = this.clutchLift.get(component) ?? 1
+    const lift = current + (target - current) * 0.2
+    this.clutchLift.set(component, lift)
+    if (lift < 0.02) return
+    const cx = x + w / 2
+    const cy = y + h / 2 - lift * 3
+    const bodyRadius = Math.min(w, h) / 2 - 9
+    ctx.save()
+    ctx.shadowColor = `rgba(0, 0, 0, ${0.5 * lift})`
+    ctx.shadowBlur = 9 * lift
+    ctx.shadowOffsetY = 5 * lift
+    ctx.fillStyle = '#37474f'
+    ctx.beginPath()
+    ctx.arc(cx, cy, bodyRadius, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+    ctx.strokeStyle = component.engaged ? '#26a69a' : '#b0bec5'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.arc(cx, cy, bodyRadius - 3, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.fillStyle = component.engaged ? '#80cbc4' : '#78909c'
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2 + Math.PI / 4
+      ctx.fillRect(cx + Math.cos(a) * (bodyRadius + 2) - 1.5, cy + Math.sin(a) * (bodyRadius + 2) - 1.5, 3, 3)
+    }
+  }
+
+  private drawFlywheelHub(x: number, y: number, w: number, h: number): void {
+    const ctx = this.ctx
+    const cx = x + w / 2
+    const cy = y + h / 2
+    ctx.fillStyle = '#ffd54f'
+    ctx.beginPath()
+    ctx.arc(cx, cy, Math.min(w, h) / 2 - 13, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#2f3640'
+    ctx.beginPath()
+    ctx.arc(cx, cy, Math.min(w, h) / 2 - 19, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  private drawFreeTerminal(component: FreeTerminalComponent, selected: BaseComponent | null): void {
+    const ctx = this.ctx
+    const x = component.posX
+    const y = component.posY
+    ctx.fillStyle = '#37474f'
+    ctx.beginPath()
+    ctx.arc(x, y, 9, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = '#b0bec5'
+    ctx.beginPath()
+    ctx.arc(x, y, 5.5, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = '#78909c'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.arc(x, y, 9, 0, Math.PI * 2)
+    ctx.stroke()
+    if (selected === component) {
+      ctx.strokeStyle = '#f1c40f'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.arc(x, y, 13, 0, Math.PI * 2)
+      ctx.stroke()
+    }
+    ctx.fillStyle = '#ecf0f1'
+    ctx.font = '10px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('接线柱', x, y + 22)
+    ctx.textAlign = 'start'
+  }
+
+  private drawPipe(pipe: PipeComponent): void {
+    const ctx = this.ctx
+    const cx = pipe.x * CELL_SIZE + CELL_SIZE / 2
+    const cy = pipe.y * CELL_SIZE + CELL_SIZE / 2
+    ctx.fillStyle = '#455a64'
+    ctx.beginPath()
+    ctx.arc(cx, cy, 7, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = '#78909c'
+    ctx.lineWidth = 1.5
+    ctx.stroke()
+  }
+
+  private drawFluidInterfaces(): void {
+    const components = this.callbacks.getComponents()
+    const links = buildFluidLinks(components)
+    if (links.length === 0) return
+    const linked = new Set<string>()
+    for (const link of links) {
+      linked.add(interfaceKey(link.a.component, link.a.iface))
+      linked.add(interfaceKey(link.b.component, link.b.iface))
+    }
+    const ctx = this.ctx
+    ctx.strokeStyle = '#607d8b'
+    ctx.lineWidth = 9
+    ctx.beginPath()
+    for (const component of components) {
+      for (const iface of component.getFluidInterfaces()) {
+        if (!linked.has(interfaceKey(component, iface))) continue
+        const pos = interfaceWorldPos(component, iface)
+        if (component instanceof PipeComponent) {
+          const cell = interfaceCell(component, iface)
+          ctx.moveTo((cell.x + 0.5) * CELL_SIZE, (cell.y + 0.5) * CELL_SIZE)
+          ctx.lineTo(pos.x, pos.y)
+        } else {
+          const cell = interfaceCell(component, iface)
+          const ccx = (cell.x + 0.5) * CELL_SIZE
+          const ccy = (cell.y + 0.5) * CELL_SIZE
+          const len = Math.hypot(ccx - pos.x, ccy - pos.y)
+          if (len <= 1) continue
+          const ux = (ccx - pos.x) / len
+          const uy = (ccy - pos.y) / len
+          ctx.moveTo(pos.x, pos.y)
+          ctx.lineTo(pos.x + ux * 9, pos.y + uy * 9)
+        }
+      }
+    }
+    ctx.stroke()
+    ctx.strokeStyle = '#263238'
+    ctx.lineWidth = 5
+    ctx.beginPath()
+    for (const component of components) {
+      for (const iface of component.getFluidInterfaces()) {
+        if (!linked.has(interfaceKey(component, iface))) continue
+        const pos = interfaceWorldPos(component, iface)
+        if (component instanceof PipeComponent) {
+          const cell = interfaceCell(component, iface)
+          ctx.moveTo((cell.x + 0.5) * CELL_SIZE, (cell.y + 0.5) * CELL_SIZE)
+          ctx.lineTo(pos.x, pos.y)
+        } else {
+          const cell = interfaceCell(component, iface)
+          const ccx = (cell.x + 0.5) * CELL_SIZE
+          const ccy = (cell.y + 0.5) * CELL_SIZE
+          const len = Math.hypot(ccx - pos.x, ccy - pos.y)
+          if (len <= 1) continue
+          const ux = (ccx - pos.x) / len
+          const uy = (ccy - pos.y) / len
+          ctx.moveTo(pos.x, pos.y)
+          ctx.lineTo(pos.x + ux * 9, pos.y + uy * 9)
+        }
+      }
+    }
+    ctx.stroke()
+    ctx.fillStyle = '#455a64'
+    ctx.strokeStyle = '#90a4ae'
+    ctx.lineWidth = 1.5
+    for (const component of components) {
+      for (const iface of component.getFluidInterfaces()) {
+        if (!linked.has(interfaceKey(component, iface))) continue
+        const pos = interfaceWorldPos(component, iface)
+        ctx.beginPath()
+        ctx.arc(pos.x, pos.y, 4.5, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.stroke()
+      }
+    }
+  }
+
+  private drawTank(tank: TankComponent, selected: BaseComponent | null): void {
+    const ctx = this.ctx
+    const x = tank.x * CELL_SIZE
+    const y = tank.y * CELL_SIZE
+    const w = tank.width * CELL_SIZE
+    const h = tank.height * CELL_SIZE
+    ctx.fillStyle = '#263238'
+    ctx.fillRect(x + 4, y + 4, w - 8, h - 8)
+    const fill = tank.storedFluidId !== null ? getFluid(tank.storedFluidId).color : '#37474f'
+    const ratio = tank.capacity > 0 ? Math.min(1, tank.storedAmount / tank.capacity) : 0
+    const fillH = (h - 16) * ratio
+    ctx.fillStyle = fill
+    ctx.globalAlpha = 0.85
+    ctx.fillRect(x + 8, y + h - 8 - fillH, w - 16, fillH)
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = selected === tank ? '#f1c40f' : '#78909c'
+    ctx.lineWidth = 2
+    ctx.strokeRect(x + 4, y + 4, w - 8, h - 8)
+    ctx.fillStyle = '#eceff1'
+    ctx.font = '10px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('储罐', x + w / 2, y + h / 2 - (h - 16) * 0.5 * ratio + 4)
+    ctx.fillText(`${(tank.storedAmount).toFixed(1)}`, x + w / 2, y + h / 2 + 14)
+    ctx.textAlign = 'start'
+  }
+
+  private drawCondenser(condenser: CondenserComponent, selected: BaseComponent | null): void {
+    const ctx = this.ctx
+    const x = condenser.x * CELL_SIZE
+    const y = condenser.y * CELL_SIZE
+    const w = condenser.width * CELL_SIZE
+    const h = condenser.height * CELL_SIZE
+    ctx.fillStyle = '#1f2a36'
+    ctx.fillRect(x + 2, y + 10, w - 4, h - 20)
+    ctx.fillStyle = '#4a6572'
+    for (let i = 0; i < condenser.width; i++) {
+      ctx.fillRect(x + i * CELL_SIZE + 6, y + 14, CELL_SIZE - 12, h - 28)
+    }
+    ctx.fillStyle = '#90caf9'
+    ctx.globalAlpha = 0.35
+    ctx.fillRect(x + 2, y + 10, w - 4, 5)
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = selected === condenser ? '#f1c40f' : '#607d8b'
+    ctx.lineWidth = 2
+    ctx.strokeRect(x + 2, y + 10, w - 4, h - 20)
+    ctx.fillStyle = '#b0bec5'
+    ctx.font = '10px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText('冷凝板', x + w / 2, y - 6)
+    ctx.textAlign = 'start'
+  }
+
+  private drawTurbine(turbine: TurbineComponent): void {
+    const ctx = this.ctx
+    const cx = (turbine.x + turbine.width / 2) * CELL_SIZE
+    const cy = (turbine.y + turbine.height / 2) * CELL_SIZE
+    const elapsed = Math.min(0.25, Math.max(0, (performance.now() - turbine.spinAngleAt) / 1000))
+    const angle = turbine.spinAngle + turbine.steamPower * Math.PI * 4 * elapsed
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate(angle)
+    ctx.fillStyle = '#546e7a'
+    for (let i = 0; i < 6; i++) {
+      ctx.rotate(Math.PI / 3)
+      ctx.beginPath()
+      ctx.moveTo(6, 0)
+      ctx.lineTo(24, -7)
+      ctx.lineTo(24, 7)
+      ctx.closePath()
+      ctx.fill()
+    }
+    ctx.restore()
+    ctx.fillStyle = '#37474f'
+    ctx.beginPath()
+    ctx.arc(cx, cy, 11, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = turbine.steamPower > 0.02 ? '#80deea' : '#78909c'
+    ctx.lineWidth = 2
+    ctx.stroke()
+  }
+
+  private drawSteamEngine(engine: SteamEngineComponent): void {
+    const ctx = this.ctx
+    const x = engine.x * CELL_SIZE
+    const y = engine.y * CELL_SIZE
+    const w = engine.width * CELL_SIZE
+    const h = engine.height * CELL_SIZE
+    ctx.fillStyle = '#3e2723'
+    ctx.fillRect(x + 4, y + 6, w - 8, h - 10)
+    ctx.fillStyle = '#5d4037'
+    ctx.fillRect(x + 8, y + 10, w - 16, h - 18)
+    ctx.fillStyle = '#212121'
+    ctx.fillRect(x + w / 2 - 5, y - 4, 10, 10)
+    const powered = Math.abs(engine.current) > 0.05
+    if (powered) {
+      ctx.fillStyle = '#ffb74d'
+      ctx.globalAlpha = 0.6 + 0.4 * Math.sin(this.time * 12)
+      ctx.beginPath()
+      ctx.arc(x + w / 2, y + h / 2, 6, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = 1
+    }
+    ctx.strokeStyle = powered ? '#ffcc80' : '#78909c'
+    ctx.lineWidth = 1.5
+    ctx.strokeRect(x + 4, y + 6, w - 8, h - 10)
+  }
+
+  private drawPipePathPreview(): void {
+    const cells = this.pipePathPreview
+    if (cells === null) return
+    const ctx = this.ctx
+    ctx.fillStyle = 'rgba(79, 195, 247, 0.3)'
+    ctx.strokeStyle = '#4fc3f7'
+    ctx.lineWidth = 1.5
+    for (const cell of cells) {
+      ctx.fillRect(cell.x * CELL_SIZE + 6, cell.y * CELL_SIZE + 6, CELL_SIZE - 12, CELL_SIZE - 12)
+      ctx.strokeRect(cell.x * CELL_SIZE + 6, cell.y * CELL_SIZE + 6, CELL_SIZE - 12, CELL_SIZE - 12)
+    }
+  }
+
+  private updatePipePathPreview(): void {
+    const drag = this.pipePathDrag
+    if (drag === null) return
+    const startCellX = Math.floor(drag.startX / CELL_SIZE)
+    const startCellY = Math.floor(drag.startY / CELL_SIZE)
+    const endCellX = Math.floor(this.mouseX / CELL_SIZE)
+    const endCellY = Math.floor(this.mouseY / CELL_SIZE)
+    const cells: Array<{ x: number; y: number }> = []
+    if (Math.abs(endCellX - startCellX) >= Math.abs(endCellY - startCellY)) {
+      const stepX = endCellX >= startCellX ? 1 : -1
+      for (let x = startCellX; x !== endCellX + stepX; x += stepX) {
+        cells.push({ x, y: startCellY })
+      }
+    } else {
+      const stepY = endCellY >= startCellY ? 1 : -1
+      for (let y = startCellY; y !== endCellY + stepY; y += stepY) {
+        cells.push({ x: startCellX, y })
+      }
+    }
+    this.pipePathPreview = cells
+  }
+
+  private updateFluidParticles(dt: number): void {
+    const components = this.callbacks.getComponents()
+    for (const emission of this.callbacks.drainFluidEmissions()) {
+      for (let i = 0; i < emission.count; i++) {
+        if (this.fluidParticles.length >= 120) this.fluidParticles.shift()
+        this.fluidParticles.push(
+          new FluidParticle(
+            emission.x + (Math.random() - 0.5) * 14,
+            emission.y + (Math.random() - 0.5) * 14,
+            emission.vx + (Math.random() - 0.5) * 16,
+            emission.vy,
+            emission.fluidId,
+          ),
+        )
+      }
+    }
+    if (this.fluidParticles.length === 0) return
+    const view = this.worldView()
+    integrateFluidParticles(this.fluidParticles, fluidReceptors(components), view, dt)
+  }
+
+  private drawFluidParticles(): void {
+    if (this.fluidParticles.length === 0) return
+    const ctx = this.ctx
+    for (const particle of this.fluidParticles) {
+      const fluid = getFluid(particle.fluidId)
+      ctx.fillStyle = fluid.color
+      ctx.globalAlpha = fluid.isGas ? 0.45 : 0.85
+      ctx.beginPath()
+      ctx.arc(particle.x, particle.y, fluid.isGas ? 5 : 3.5, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.globalAlpha = 1
+  }
+
+  private drawPipeFlowAnimation(): void {
+    const networks = this.callbacks.getPipeNetworks()
+    if (networks.length === 0) return
+    const ctx = this.ctx
+    const links = buildFluidLinks(this.callbacks.getComponents())
+    for (const network of networks) {
+      if (network.volume <= 0 || network.fluidId === null) continue
+      const fluid = getFluid(network.fluidId)
+      ctx.strokeStyle = fluid.color
+      ctx.globalAlpha = 0.5
+      ctx.lineWidth = 4
+      ctx.setLineDash([6, 10])
+      ctx.lineDashOffset = -this.time * 30
+      ctx.beginPath()
+      const pipeSet = new Set(network.pipes)
+      for (const pipe of network.pipes) {
+        const cx = pipe.x * CELL_SIZE + CELL_SIZE / 2
+        const cy = pipe.y * CELL_SIZE + CELL_SIZE / 2
+        for (const link of links) {
+          let selfIface = null
+          let partner = null
+          if (link.a.component === pipe) {
+            selfIface = link.a.iface
+            partner = link.b
+          } else if (link.b.component === pipe) {
+            selfIface = link.b.iface
+            partner = link.a
+          } else {
+            continue
+          }
+          ctx.moveTo(cx, cy)
+          if (partner.component instanceof PipeComponent && pipeSet.has(partner.component)) {
+            ctx.lineTo(partner.component.x * CELL_SIZE + CELL_SIZE / 2, partner.component.y * CELL_SIZE + CELL_SIZE / 2)
+          } else {
+            const pos = interfaceWorldPos(pipe, selfIface)
+            ctx.lineTo(pos.x, pos.y)
+          }
+        }
+      }
+      ctx.stroke()
+      ctx.setLineDash([])
+      ctx.globalAlpha = 1
+    }
+  }
+
   private drawRealGear(component: BaseComponent, x: number, y: number, w: number, h: number): void {
     const ctx = this.ctx
     const cx = x + w / 2
@@ -1364,6 +2091,56 @@ export class BoardCanvas {
       ctx.fill()
     }
     ctx.strokeStyle = '#8fa1ad'
+    ctx.lineWidth = 2
+    for (let i = 0; i < 3; i++) {
+      const spoke = angle + (i * Math.PI * 2) / 3
+      ctx.beginPath()
+      ctx.moveTo(cx + Math.cos(spoke) * rootRadius * 0.18, cy + Math.sin(spoke) * rootRadius * 0.18)
+      ctx.lineTo(cx + Math.cos(spoke) * rootRadius * 0.92, cy + Math.sin(spoke) * rootRadius * 0.92)
+      ctx.stroke()
+    }
+    ctx.fillStyle = '#37424b'
+    ctx.beginPath()
+    ctx.arc(cx, cy, Math.max(4, rootRadius * 0.22), 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  private drawMotor(component: MotorComponent, x: number, y: number, w: number, h: number): void {
+    const ctx = this.ctx
+    const cx = x + w / 2
+    const cy = y + h / 2
+    const radius = Math.min(w, h) / 2
+    const powered = Math.abs(component.current) > 0.05
+    const elapsed = Math.min(0.25, Math.max(0, (performance.now() - component.rotationAngleAt) / 1000))
+    const angle = component.rotationAngle + component.rotationSpeed * elapsed
+    const rootRadius = radius - 5
+    const tipRadius = radius + 3
+    const toothHalf = (Math.PI / 8) * 0.42
+    if (powered) {
+      ctx.save()
+      ctx.strokeStyle = '#22d3ee'
+      ctx.lineWidth = 3
+      ctx.globalAlpha = 0.55 + Math.sin(this.time * 6) * 0.25
+      ctx.beginPath()
+      ctx.arc(cx, cy, tipRadius + 3, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    }
+    ctx.fillStyle = powered ? '#3b6e8f' : '#4d5a64'
+    ctx.beginPath()
+    ctx.arc(cx, cy, rootRadius, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = powered ? '#4f8aa8' : '#5d6d78'
+    for (let i = 0; i < 8; i++) {
+      const a = angle + (i * Math.PI * 2) / 8
+      ctx.beginPath()
+      ctx.moveTo(cx + Math.cos(a - toothHalf) * rootRadius, cy + Math.sin(a - toothHalf) * rootRadius)
+      ctx.arc(cx, cy, tipRadius, a - toothHalf, a + toothHalf)
+      ctx.lineTo(cx + Math.cos(a + toothHalf) * rootRadius, cy + Math.sin(a + toothHalf) * rootRadius)
+      ctx.closePath()
+      ctx.fill()
+    }
+    ctx.strokeStyle = powered ? '#7ddcf0' : '#8fa1ad'
     ctx.lineWidth = 2
     for (let i = 0; i < 3; i++) {
       const spoke = angle + (i * Math.PI * 2) / 3
@@ -1599,6 +2376,52 @@ export class BoardCanvas {
     ctx.stroke()
   }
 
+  private drawPhotonScreen(component: PhotonScreenComponent, x: number, y: number, w: number, h: number): void {
+    const ctx = this.ctx
+    component.updateSpots(this.time, w, h)
+    ctx.fillStyle = '#141b28'
+    ctx.beginPath()
+    ctx.roundRect(x + 4, y + 4, w - 8, h - 8, 4)
+    ctx.fill()
+    ctx.strokeStyle = '#4a5568'
+    ctx.lineWidth = 1
+    ctx.stroke()
+    for (const spot of component.spots) {
+      const glide = component.glideOffset(spot.progress)
+      const spotX = x + spot.localX + glide.dx
+      const spotY = y + spot.localY + glide.dy
+      ctx.globalAlpha = 0.35
+      ctx.fillStyle = '#ffd54f'
+      ctx.beginPath()
+      ctx.arc(spotX, spotY, 8, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = 1
+      ctx.beginPath()
+      ctx.arc(spotX, spotY, 4, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.globalAlpha = 1
+  }
+
+  private drawElectronGun(component: ElectronGunComponent, x: number, y: number, w: number, h: number): void {
+    const ctx = this.ctx
+    const cx = x + w / 2
+    const cy = y + h / 2 + 6
+    ctx.fillStyle = '#37474f'
+    ctx.beginPath()
+    ctx.arc(cx, cy, Math.min(w, h) / 2 - 10, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = '#90a4ae'
+    ctx.lineWidth = 1.5
+    ctx.stroke()
+    ctx.strokeStyle = '#ffd54f'
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    ctx.moveTo(cx + Math.cos(component.aimAngle) * 6, cy + Math.sin(component.aimAngle) * 6)
+    ctx.lineTo(cx + Math.cos(component.aimAngle) * (w / 2 - 2), cy + Math.sin(component.aimAngle) * (h / 2 - 2))
+    ctx.stroke()
+  }
+
   private rheostatSliderHit(): RheostatComponent | null {
     for (const component of this.callbacks.getComponents()) {
       if (!(component instanceof RheostatComponent)) continue
@@ -1618,7 +2441,7 @@ export class BoardCanvas {
 
   private drawPendingWire(): void {
     const pending = this.callbacks.getWirePending()
-    if (pending === null || this.mouseX < 0) return
+    if (pending === null || !this.mouseInside) return
     const ctx = this.ctx
     const start = portPosition(pending.owner, pending.portIndex)
     const startXY = { x: start.px, y: start.py }
@@ -1717,8 +2540,20 @@ export class BoardCanvas {
 
   private drawDragGhost(): void {
     const ghost = this.callbacks.getDragGhost()
-    if (ghost === null || ghost.cellX < 0 || ghost.cellY < 0) return
+    if (ghost === null) return
     const ctx = this.ctx
+    if (ghost.defId === 'free_terminal') {
+      if (!Number.isFinite(ghost.px)) return
+      ctx.fillStyle = 'rgba(79, 195, 247, 0.35)'
+      ctx.beginPath()
+      ctx.arc(ghost.px, ghost.py, 9, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = '#4fc3f7'
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+      return
+    }
+    if (!Number.isFinite(ghost.cellX) || !Number.isFinite(ghost.cellY)) return
     ctx.fillStyle = 'rgba(79, 195, 247, 0.25)'
     ctx.fillRect(ghost.cellX * CELL_SIZE, ghost.cellY * CELL_SIZE, CELL_SIZE, CELL_SIZE)
   }

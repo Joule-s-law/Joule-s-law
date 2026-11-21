@@ -35,7 +35,7 @@ export interface TechNode {
 	effects: TechEffect[]
 }
 
-export const BASE_UNLOCKED_COMPONENTS: string[] = ['hand_crank', 'resistor', 'wire', 'fuse', 'switch', 'diode', 'gear_group', 'big_gear', 'chain_drive']
+export const BASE_UNLOCKED_COMPONENTS: string[] = ['hand_crank', 'resistor', 'wire', 'fuse', 'switch', 'diode', 'gear_group', 'big_gear', 'chain_drive', 'photon_screen', 'electron_gun', 'clutch', 'flywheel', 'free_terminal']
 const BASE_WIRE_MATERIALS: string[] = ['platinum']
 const ROOT_INITIAL_LEVEL = 1
 
@@ -141,7 +141,7 @@ const TECH_LIST: TechNode[] = [
 		baseCost: 2.74,
 		costScaling: 2,
 		effects: [
-			{ kind: 'unlockComponents', perLevel: 0, target: 'motor,steam_engine,turbine' },
+			{ kind: 'unlockComponents', perLevel: 0, target: 'motor,steam_engine,turbine,pipe,tank,condenser' },
 			{ kind: 'efficiencyBoost', perLevel: 0.01 },
 		],
 	},

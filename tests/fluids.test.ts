@@ -1,0 +1,141 @@
+import { describe, expect, it } from 'vitest'
+import { Simulation } from '../src/core/sim/Simulation'
+import { createComponentById } from '../src/core/components/registry/componentRegistry'
+import { fluidCompatible, buoyancyVelocity, getFluid } from '../src/core/fluids/fluids'
+import { VoltageSourceComponent } from '../src/core/components/behaviors/VoltageSourceComponent'
+import { SteamEngineComponent } from '../src/core/components/behaviors/SteamEngineComponent'
+import { TurbineComponent } from '../src/core/components/behaviors/TurbineComponent'
+import { TankComponent } from '../src/core/components/behaviors/TankComponent'
+import { ResistiveComponent } from '../src/core/components/behaviors/ResistiveComponent'
+
+function addPipe(sim: Simulation, x: number, y: number) {
+  const pipe = createComponentById('pipe')
+  pipe.x = x
+  pipe.y = y
+  sim.addComponent(pipe)
+  return pipe
+}
+
+describe('fluids', () => {
+  it('fluid rules: gas rises, liquid sinks, viscosity slows both', () => {
+    const steam = getFluid('steam')
+    const water = getFluid('water')
+    expect(buoyancyVelocity(steam)).toBeLessThan(0)
+    expect(buoyancyVelocity(water)).toBeGreaterThan(0)
+    const thickWater = { ...water, viscosity: 0.9 }
+    expect(Math.abs(buoyancyVelocity(thickWater))).toBeLessThan(Math.abs(buoyancyVelocity(water)))
+    const denseWater = { ...water, density: 120 }
+    expect(buoyancyVelocity(denseWater)).toBeGreaterThan(buoyancyVelocity(water))
+    const denseGas = { ...steam, density: 0.9 }
+    expect(buoyancyVelocity(denseGas)).toBeCloseTo(buoyancyVelocity(steam), 6)
+  })
+
+  it('fluidCompatible rejects mixed fluids', () => {
+    expect(fluidCompatible(null, 'steam')).toBe(true)
+    expect(fluidCompatible('steam', 'steam')).toBe(true)
+    expect(fluidCompatible('steam', 'water')).toBe(false)
+  })
+
+  it('adjacent pipes merge into one network; a network carries a single fluid', () => {
+    const sim = new Simulation()
+    const a = addPipe(sim, 0, 0)
+    const b = addPipe(sim, 1, 0)
+    const far = addPipe(sim, 6, 6)
+    expect(sim.pipeSystem.networkOf(a)).toBe(sim.pipeSystem.networkOf(b))
+    expect(sim.pipeSystem.networkOf(far)).not.toBe(sim.pipeSystem.networkOf(a))
+    expect(sim.pipeSystem.pushFluid(a, 'steam', 5)).toBe(5)
+    expect(sim.pipeSystem.pushFluid(a, 'water', 5)).toBe(0)
+    expect(sim.pipeSystem.networkOf(a)?.fluidId).toBe('steam')
+    expect(sim.pipeSystem.pullFluid(b, 3)).toEqual({ fluidId: 'steam', amount: 3 })
+    sim.removeComponent(b)
+    expect(sim.pipeSystem.networkOf(a)).not.toBeNull()
+    expect(sim.pipeSystem.pipeAt(1, 0)).toBeNull()
+  })
+
+  it('steam engine pushes steam through pipes and turbine converts it to emf', () => {
+    const sim = new Simulation()
+    const crank = createComponentById('hand_crank') as VoltageSourceComponent
+    crank.rotationSpeed = Math.PI * 2
+    crank.rotationDrive = 1
+    crank.x = 0
+    crank.y = 2
+    const engine = createComponentById('steam_engine') as SteamEngineComponent
+    engine.x = 2
+    engine.y = 2
+    const turbine = createComponentById('turbine') as TurbineComponent
+    turbine.x = 8
+    turbine.y = 2
+    const load = createComponentById('resistor') as ResistiveComponent
+    load.x = 10
+    load.y = 2
+    sim.addComponent(crank)
+    sim.addComponent(engine)
+    sim.addComponent(turbine)
+    sim.addComponent(load)
+    for (let x = 3; x <= 7; x++) addPipe(sim, x, 2)
+    sim.connect(crank.getPort(0), engine.getPort(0))
+    sim.connect(engine.getPort(1), crank.getPort(1))
+    sim.connect(turbine.getPort(0), load.getPort(0))
+    sim.connect(load.getPort(1), turbine.getPort(1))
+    for (let i = 0; i < 80; i++) {
+      sim.tick()
+      sim.drainFluidEmissions()
+    }
+    expect(Math.abs(turbine.current)).toBeGreaterThan(0.005)
+    expect(turbine.steamPower).toBeGreaterThan(0.02)
+    expect(Math.abs(load.voltage)).toBeGreaterThan(0.1)
+  })
+
+  it('tank stores one fluid and refuses to mix', () => {
+    const sim = new Simulation()
+    const supply = addPipe(sim, 0, 0)
+    const bridge = addPipe(sim, 1, 0)
+    const tank = createComponentById('tank') as TankComponent
+    tank.x = 2
+    tank.y = 0
+    sim.addComponent(tank)
+    expect(sim.pipeSystem.pushFluid(supply, 'steam', 20)).toBe(20)
+    for (let i = 0; i < 60; i++) sim.tick()
+    expect(tank.storedFluidId).toBe('steam')
+    expect(tank.storedAmount).toBeGreaterThan(0)
+    const other = addPipe(sim, 2, -1)
+    expect(sim.pipeSystem.pushFluid(other, 'water', 10)).toBe(10)
+    for (let i = 0; i < 30; i++) sim.tick()
+    expect(tank.storedFluidId).toBe('steam')
+    expect(tank.storedAmount).toBeGreaterThan(0)
+    expect(sim.pipeSystem.networkOf(bridge)?.fluidId).toBe('steam')
+    expect(sim.pipeSystem.networkOf(other)?.fluidId).toBe('water')
+  })
+
+  it('component-component interfaces connect without pipes', () => {
+    const sim = new Simulation()
+    const crank = createComponentById('hand_crank') as VoltageSourceComponent
+    crank.rotationSpeed = Math.PI * 2
+    crank.rotationDrive = 1
+    crank.x = 0
+    crank.y = 0
+    const engine = createComponentById('steam_engine') as SteamEngineComponent
+    engine.x = 2
+    engine.y = 0
+    const turbine = createComponentById('turbine') as TurbineComponent
+    turbine.x = 3
+    turbine.y = 0
+    const load = createComponentById('resistor') as ResistiveComponent
+    load.x = 5
+    load.y = 0
+    sim.addComponent(crank)
+    sim.addComponent(engine)
+    sim.addComponent(turbine)
+    sim.addComponent(load)
+    sim.connect(crank.getPort(0), engine.getPort(0))
+    sim.connect(engine.getPort(1), crank.getPort(1))
+    sim.connect(turbine.getPort(0), load.getPort(0))
+    sim.connect(load.getPort(1), turbine.getPort(1))
+    for (let i = 0; i < 80; i++) {
+      sim.tick()
+      sim.drainFluidEmissions()
+    }
+    expect(turbine.steamPower).toBeGreaterThan(0.02)
+    expect(Math.abs(turbine.current)).toBeGreaterThan(0.005)
+  })
+})

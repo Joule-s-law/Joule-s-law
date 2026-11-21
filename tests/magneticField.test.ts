@@ -36,14 +36,15 @@ describe('collectMagneticSources', () => {
 describe('traceMagneticFieldLines', () => {
   const width = 24 * 48
   const height = 14 * 48
+  const bounds = { x0: 0, y0: 0, x1: width, y1: height }
 
   it('returns no lines without sources', () => {
-    expect(traceMagneticFieldLines([], width, height).length).toBe(0)
+    expect(traceMagneticFieldLines([], bounds).length).toBe(0)
   })
 
   it('draws count lines scaling with current, all closed near the coil', () => {
     const coil = buildCoil(2, 12, 7)
-    const lines = traceMagneticFieldLines([coil], width, height)
+    const lines = traceMagneticFieldLines([coil], bounds)
     expect(lines.length).toBeGreaterThanOrEqual(6)
     const cx = 12.5 * 48
     const cy = 7.5 * 48
@@ -60,14 +61,14 @@ describe('traceMagneticFieldLines', () => {
   })
 
   it('weak current yields fewer lines than strong current', () => {
-    const weak = traceMagneticFieldLines([buildCoil(0.2, 12, 7)], width, height)
-    const strong = traceMagneticFieldLines([buildCoil(3, 12, 7)], width, height)
+    const weak = traceMagneticFieldLines([buildCoil(0.2, 12, 7)], bounds)
+    const strong = traceMagneticFieldLines([buildCoil(3, 12, 7)], bounds)
     expect(strong.length).toBeGreaterThan(weak.length)
   })
 
   it('reversing current mirrors the loop across the coil', () => {
-    const forward = traceMagneticFieldLines([buildCoil(2, 12, 7)], width, height)
-    const reversed = traceMagneticFieldLines([buildCoil(-2, 12, 7)], width, height)
+    const forward = traceMagneticFieldLines([buildCoil(2, 12, 7)], bounds)
+    const reversed = traceMagneticFieldLines([buildCoil(-2, 12, 7)], bounds)
     expect(forward.length).toBe(reversed.length)
     const cy = 7.5 * 48
     const firstSeed = forward[0]?.points[Math.floor((forward[0]?.points.length ?? 1) / 2)]
@@ -82,7 +83,7 @@ describe('traceMagneticFieldLines', () => {
   it('two coils bend each other field lines', () => {
     const coilA = buildCoil(2, 6, 7)
     const coilB = buildCoil(2, 17, 7)
-    const lines = traceMagneticFieldLines([coilA, coilB], width, height)
+    const lines = traceMagneticFieldLines([coilA, coilB], bounds)
     expect(lines.length).toBeGreaterThanOrEqual(6)
   })
 })
@@ -90,7 +91,7 @@ describe('traceMagneticFieldLines', () => {
 describe('magnetic sensor reading', () => {
   it('reports flux density and flux from the field grid', () => {
     const coil = buildCoil(2, 5, 7)
-    const grid = new FieldGrid(24, 14)
+    const grid = new FieldGrid()
     grid.update([coil], 0.016)
     const sensor = createComponent(INDUCTION_COIL) as FieldSensorComponent
     sensor.x = 5
@@ -108,7 +109,7 @@ describe('magnetic sensor reading', () => {
 
   it('stores induced emf for the glow indicator', () => {
     const coil = buildCoil(2, 5, 7)
-    const grid = new FieldGrid(24, 14)
+    const grid = new FieldGrid()
     const sensor = createComponent(INDUCTION_COIL) as FieldSensorComponent
     sensor.x = 5
     sensor.y = 7

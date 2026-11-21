@@ -98,6 +98,59 @@
         <div class="row uuid-row"><span>uuid</span><span class="uuid">{{ info.fourthGenUuid }}</span></div>
       </div>
 
+      <div v-if="info.isElectronGun" class="extra">
+        <div class="row"><span>发射频率</span><span>{{ info.launchFrequency >= 0.01 ? info.launchFrequency.toFixed(1) + ' Hz' : '未通电' }}</span></div>
+        <div class="row"><span>发射方向</span><span>{{ aimDegrees.toFixed(0) }}°（{{ info.aimAngle.toFixed(2) }} rad）</span></div>
+        <input
+          class="slider"
+          type="range"
+          min="0"
+          max="6.283"
+          step="0.05"
+          :value="info.aimAngle"
+          @input="onAimInput"
+        />
+        <div class="row"><span>初速度</span><span>{{ info.launchSpeed.toFixed(0) }} px/s</span></div>
+        <input
+          class="slider"
+          type="range"
+          min="50"
+          max="700"
+          step="10"
+          :value="info.launchSpeed"
+          @input="onSpeedInput"
+        />
+      </div>
+
+      <div v-if="info.isPhotonScreen" class="extra">
+        <div class="row"><span>传播方向</span><span>光点每2秒沿此方向移动一格，移出屏幕即消失</span></div>
+        <div class="material-btns">
+          <button
+            v-for="dir in PHOTON_DIRECTIONS"
+            :key="dir.value"
+            :class="{ active: dir.value === info.propagation }"
+            @click="game.setPhotonScreenDirection(dir.value)"
+          >
+            {{ dir.label }}
+          </button>
+        </div>
+      </div>
+
+      <div v-if="info.isClutch" class="extra">
+        <div class="row"><span>状态</span><span>{{ info.clutchEngaged ? '已吸合（齿轮落下，参与啮合）' : '已抬起（齿轮悬浮，不参与耦合）' }}</span></div>
+        <div class="row"><span>吸合电流</span><span>≥ 0.01 A</span></div>
+      </div>
+
+      <div v-if="info.isTank" class="extra">
+        <div class="row"><span>储存流体</span><span>{{ info.tankFluidId === null ? '空' : fluidName(info.tankFluidId) }}</span></div>
+        <div class="row"><span>存量</span><span>{{ info.tankAmount.toFixed(1) }} / {{ info.tankCapacity }}</span></div>
+      </div>
+
+      <div v-if="info.isTurbine" class="extra">
+        <div class="row"><span>蒸汽功率</span><span>{{ (info.turbineSteamPower * 100).toFixed(0) }}%</span></div>
+        <div class="row"><span>当前电动势</span><span>{{ (info.voltage >= 0 ? '' : '-') + Math.abs(info.voltage).toFixed(2) }} V</span></div>
+      </div>
+
       <button class="action monitor" :class="{ on: info.monitored }" @click="game.toggleMonitor()">
         实时监视：{{ info.monitored ? '开' : '关' }}（按住 Tab 点击元件可快捷切换）
       </button>
@@ -111,11 +164,20 @@
 import { computed, ref, watch } from 'vue'
 import { useGameStore } from '../stores/useGameStore'
 import { WIRE_MATERIALS } from '../../core/components/registry/wireMaterials'
+import { getFluid } from '../../core/fluids/fluids'
+import type { PhotonPropagation } from '../../core/components/behaviors/PhotonScreenComponent'
 import { useSettingsStore, formatWithPrefix, formatAngularValue } from '../settings/useSettingsStore'
 
 const game = useGameStore()
 const s = useSettingsStore()
 const info = computed(() => game.selectedInfo)
+
+const PHOTON_DIRECTIONS: Array<{ value: PhotonPropagation; label: string }> = [
+  { value: 'up', label: '上' },
+  { value: 'down', label: '下' },
+  { value: 'left', label: '左' },
+  { value: 'right', label: '右' },
+]
 
 const WIRE_PICK_COLORS = ['#e74c3c', '#e67e22', '#f1c40f', '#2ecc71', '#1abc9c', '#3498db', '#9b59b6', '#e84393']
 const fourthGenNameDraft = ref('')
@@ -136,6 +198,15 @@ const batteryState = computed(() => {
   if (Math.abs(data.current) < 0.001) return '待机（未接通回路）'
   return data.current < 0 ? '充电中' : '放电中'
 })
+const aimDegrees = computed(() => ((info.value?.aimAngle ?? 0) * 180) / Math.PI)
+
+function onAimInput(event: Event): void {
+  game.setElectronGunAim(Number((event.target as HTMLInputElement).value))
+}
+
+function onSpeedInput(event: Event): void {
+  game.setElectronGunSpeed(Number((event.target as HTMLInputElement).value))
+}
 
 function formatResistance(resistance: number): string {
   if (resistance === Number.POSITIVE_INFINITY) return '∞（断开）'
@@ -158,6 +229,10 @@ function membraneName(membrane: string): string {
   if (membrane === 'cation') return '阳离子交换膜'
   if (membrane === 'anion') return '阴离子交换膜'
   return '无'
+}
+
+function fluidName(id: string): string {
+  return getFluid(id).displayName
 }
 </script>
 
@@ -284,6 +359,11 @@ function membraneName(membrane: string): string {
 .name-input:focus {
   outline: none;
   border-color: #b388ff;
+}
+.slider {
+  width: 100%;
+  accent-color: #4fc3f7;
+  cursor: pointer;
 }
 .uuid-row .uuid {
   font-size: 10px;
