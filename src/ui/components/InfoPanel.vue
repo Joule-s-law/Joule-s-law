@@ -152,7 +152,9 @@
       </div>
 
       <div v-if="info.isFissionReactor && reactor !== null" class="extra">
-        <div class="row"><span>堆芯温度</span><span :class="{ hot: info.fissionTempK >= 900 }">{{ info.fissionTempK.toFixed(1) }} K</span></div>
+        <div v-if="game.reactorHint !== null" class="reactor-hint">{{ game.reactorHint }}</div>
+        <div class="row"><span>堆芯温度</span><span :class="{ hot: info.fissionTempK >= 2500, warm: info.fissionTempK >= 1900 }">{{ info.fissionTempK.toFixed(1) }} K</span></div>
+        <div class="row"><span>反应速率</span><span>{{ (info.fissionPower * 100).toFixed(0) }}%</span></div>
         <div class="row"><span>控制棒</span><span>{{ (info.fissionRod * 100).toFixed(0) }}% 刹车</span></div>
         <div class="rod-slider">
           <span>刹车比例</span>
@@ -168,7 +170,13 @@
           <button class="action start" :disabled="info.fissionRunning" @click="game.startFission(reactor)">启动反应</button>
           <button class="action scram" @click="game.emergencyScram(reactor)">紧急刹车</button>
         </div>
-        <div class="row warn"><span>警告</span><span>供水不足会升温，1200K 熔毁</span></div>
+        <div class="row warn"><span>警告</span><span>1900K 满功率，2500K 熔毁警告，3200K 爆炸</span></div>
+      </div>
+
+      <div v-if="info.isWaterPump" class="extra">
+        <div class="row"><span>所在地形</span><span :class="info.pumpOnWater ? '' : 'danger'">{{ info.pumpOnWater ? '水面' : '陆地（不出水）' }}</span></div>
+        <div class="row"><span>电功率</span><span>{{ info.pumpPower.toFixed(1) }} W</span></div>
+        <div class="row"><span>出水上限</span><span>{{ Math.min(10, info.pumpPower * 0.4).toFixed(1) }} /s</span></div>
       </div>
 
       <button class="action monitor" :class="{ on: info.monitored }" @click="game.toggleMonitor()">
@@ -428,8 +436,20 @@ function fluidName(id: string): string {
   color: #ff5252;
 }
 .row .hot {
-  color: #ff8a65;
+  color: #ff5252;
   font-weight: 700;
+}
+.row .warm {
+  color: #ffb300;
+  font-weight: 700;
+}
+.reactor-hint {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border: 1px solid #ffb300;
+  color: #ffb300;
+  font-size: 12px;
+  border-radius: 4px;
 }
 .row .warn {
   color: #ffb300;

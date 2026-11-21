@@ -1,4 +1,4 @@
-export type BehaviorId = 'voltageSource' | 'resistive' | 'wire' | 'converter' | 'motor' | 'battery' | 'switch' | 'fieldSensor' | 'gear' | 'diode' | 'rheostat' | 'voltageTransformer' | 'fourthGenerator' | 'chainDrive' | 'photonScreen' | 'electronGun' | 'clutch' | 'freeTerminal' | 'steamSource' | 'steamTurbine' | 'pipe' | 'tank' | 'condenser' | 'fissionReactor'
+export type BehaviorId = 'voltageSource' | 'resistive' | 'wire' | 'converter' | 'motor' | 'battery' | 'switch' | 'fieldSensor' | 'gear' | 'diode' | 'rheostat' | 'voltageTransformer' | 'fourthGenerator' | 'chainDrive' | 'photonScreen' | 'electronGun' | 'clutch' | 'freeTerminal' | 'steamSource' | 'steamTurbine' | 'pipe' | 'tank' | 'condenser' | 'fissionReactor' | 'waterPump'
 
 export interface ComponentDefinition {
   id: string

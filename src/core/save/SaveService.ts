@@ -45,6 +45,7 @@ interface SavedComponent {
   fissionTempK?: number
   fissionRod?: number
   fissionRunning?: boolean
+  fissionPower?: number
 }
 
 interface SavedLink {
@@ -64,6 +65,7 @@ interface SaveData {
   components: SavedComponent[]
   links: SavedLink[]
   contamination?: { x: number; y: number; radius: number } | null
+  terrainSeed?: number
 }
 
 export interface LoadResult {
@@ -153,7 +155,7 @@ export class SaveService {
       ...(component instanceof FreeTerminalComponent ? { terminalX: component.posX, terminalY: component.posY } : {}),
       ...(component instanceof TankComponent ? { tankFluidId: component.storedFluidId, tankAmount: component.storedAmount } : {}),
       ...(component instanceof FissionReactorComponent
-        ? { fissionTempK: component.coreTempK, fissionRod: component.controlRatio, fissionRunning: component.running }
+        ? { fissionTempK: component.coreTempK, fissionRod: component.controlRatio, fissionRunning: component.running, fissionPower: component.reactorPower }
         : {}),
     }))
     const componentIndex = new Map<BaseComponent, number>(this.sim.components.map((component, index) => [component, index]))
@@ -191,6 +193,7 @@ export class SaveService {
       components,
       links,
       contamination: this.sim.contaminationZone,
+      terrainSeed: this.sim.terrainSeed,
     }
   }
 
@@ -244,6 +247,7 @@ export class SaveService {
         if (saved.fissionTempK !== undefined) component.coreTempK = saved.fissionTempK
         if (saved.fissionRod !== undefined) component.controlRatio = saved.fissionRod
         if (saved.fissionRunning !== undefined) component.running = saved.fissionRunning
+        if (saved.fissionPower !== undefined) component.reactorPower = saved.fissionPower
       }
       this.sim.addComponent(component)
       components.push(component)
@@ -258,6 +262,7 @@ export class SaveService {
       this.sim.connect(portA, portB)
     }
     this.sim.contaminationZone = data.contamination ?? null
+    if (data.terrainSeed !== undefined) this.sim.terrainSeed = data.terrainSeed
     const elapsedSeconds = Math.min(OFFLINE_CAP_SECONDS, Math.max(0, (Date.now() - data.savedAtRealMs) / 1000))
     const offlineGained = data.incomePerSecond * elapsedSeconds * OFFLINE_EFFICIENCY
     this.sim.economy.money += offlineGained

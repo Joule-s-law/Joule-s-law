@@ -51,10 +51,27 @@ export const CONDENSER: ComponentDefinition = {
   height: 1,
 }
 
+export const WATER_PUMP: ComponentDefinition = {
+  id: 'water_pump',
+  displayName: '抽水机',
+  description: '放在湖泊或海洋的水面格上，通电后从上下左右四个接口持续输出水。电功率越大，出水越快（上限 10/s）。放在陆地则不出水。',
+  loreDescription: '阿基米德螺旋提水器是人类最早的水泵之一，而今天的电动离心泵依靠叶轮旋转产生的离心力把水送上高处——没有持续的电，就没有持续的水流。',
+  price: 450,
+  priceScaling: 1.15,
+  portCount: 2,
+  resistance: 8,
+  ratedCurrent: 5,
+  behaviorId: 'waterPump',
+  behaviorParams: { maxRate: 10, powerToFlow: 0.4 },
+  behaviorTags: {},
+  width: 1,
+  height: 1,
+}
+
 export const FISSION_REACTOR: ComponentDefinition = {
   id: 'fission_reactor',
   displayName: '裂变反应堆',
-  description: '5×3 核裂变装置：上方两个接口输入水，下方两个接口大量输出蒸汽。点击「启动反应」开始链式反应，拖动控制棒调节刹车比例。供水不足时堆芯升温，达到 1200K 即熔毁爆炸——半径 1000 格内的元件全部摧毁，区域被核污染笼罩（做功 ×10%，收入 ×25%）。',
+  description: '5×3 核裂变装置：上方两个接口输入水，下方两个接口输出蒸汽。点击「启动反应」后反应速率按刹车比例逐渐上升（0% 刹车 10 秒到满功率），降功率则较慢（100% 刹车 30 秒归零后自动停堆）。对抗比例 = 冷却 ÷ (冷却 + 反应 × 0.4)，高于 75% 时堆芯回到工作温度，低于 75% 时升温且差距越大升得越快；2500K 红色熔毁警告，3200K 熔毁爆炸——半径 200 格内元件全部摧毁并留下核污染区（做功 ×10%，收入 ×25%）。',
   loreDescription: '1942 年费米在芝加哥建成人类第一座可控核反应堆。链式反应释放的巨大能量来自质量亏损 E=mc²，而控制棒吸收中子的速度决定了它是电站还是炸弹——切尔诺贝利与福岛都提醒我们：中子不原谅疏忽。',
   price: 6000,
   priceScaling: 1.2,
@@ -62,7 +79,7 @@ export const FISSION_REACTOR: ComponentDefinition = {
   resistance: 0,
   ratedCurrent: 0,
   behaviorId: 'fissionReactor',
-  behaviorParams: { waterRate: 15, steamRate: 30, operatingTemp: 650, meltdownTemp: 1200 },
+  behaviorParams: { waterRate: 15, steamRate: 30, heatRatio: 0.4, operatingTemp: 1900, meltdownTemp: 3200 },
   behaviorTags: {},
   width: 5,
   height: 3,

@@ -17,6 +17,7 @@ import { FreeTerminalComponent } from '../../core/components/behaviors/FreeTermi
 import { TankComponent } from '../../core/components/behaviors/TankComponent'
 import { TurbineComponent } from '../../core/components/behaviors/TurbineComponent'
 import { FissionReactorComponent } from '../../core/components/behaviors/FissionReactorComponent'
+import { WaterPumpComponent } from '../../core/components/behaviors/WaterPumpComponent'
 import { ElectronGunComponent } from '../../core/components/behaviors/ElectronGunComponent'
 import { PhotonScreenComponent } from '../../core/components/behaviors/PhotonScreenComponent'
 import type { PhotonPropagation } from '../../core/components/behaviors/PhotonScreenComponent'
@@ -27,6 +28,7 @@ import { useSettingsStore } from '../settings/useSettingsStore'
 import { WIRE } from '../../core/components/registry/definitions'
 import { WIRE_MATERIALS, getWireMaterial, DEFAULT_WIRE_MATERIAL_ID } from '../../core/components/registry/wireMaterials'
 import { CELL_SIZE, portPosition, wireDistance } from '../board/boardMath'
+import { clearTerrainChunkCache } from '../board/terrainChunks'
 
 const WIRE_MATERIAL_PREF_KEY = 'joules-law-wire-material'
 
@@ -75,6 +77,10 @@ export interface ComponentInfo {
   fissionTempK: number
   fissionRod: number
   fissionRunning: boolean
+  fissionPower: number
+  isWaterPump: boolean
+  pumpPower: number
+  pumpOnWater: boolean
   isElectronGun: boolean
   aimAngle: number
   launchSpeed: number
@@ -185,6 +191,7 @@ export const useGameStore = defineStore('game', () => {
   }
 
   const loadResult = saver.load()
+  clearTerrainChunkCache()
   if (loadResult !== null) {
     offlineGained.value = loadResult.offlineGained
   } else {
@@ -253,6 +260,10 @@ export const useGameStore = defineStore('game', () => {
       fissionTempK: component instanceof FissionReactorComponent ? component.coreTempK : 300,
       fissionRod: component instanceof FissionReactorComponent ? component.controlRatio : 1,
       fissionRunning: component instanceof FissionReactorComponent ? component.running : false,
+      fissionPower: component instanceof FissionReactorComponent ? component.reactorPower : 0,
+      isWaterPump: component instanceof WaterPumpComponent,
+      pumpPower: component instanceof WaterPumpComponent ? component.current * component.current * component.getResistance() : 0,
+      pumpOnWater: component instanceof WaterPumpComponent ? component.onWater : false,
       isElectronGun: component instanceof ElectronGunComponent,
       aimAngle: component instanceof ElectronGunComponent ? component.aimAngle : 0,
       launchSpeed: component instanceof ElectronGunComponent ? component.launchSpeed : 0,
@@ -838,8 +849,24 @@ export const useGameStore = defineStore('game', () => {
     wirePendingPort.value = null
   }
 
+  const reactorHint = ref<string | null>(null)
+  let reactorHintTimer: ReturnType<typeof setTimeout> | null = null
+
+  function showReactorHint(message: string): void {
+    reactorHint.value = message
+    if (reactorHintTimer !== null) clearTimeout(reactorHintTimer)
+    reactorHintTimer = setTimeout(() => {
+      reactorHint.value = null
+    }, 3000)
+  }
+
   function startFission(component: FissionReactorComponent): void {
-    if (!component.melted) component.running = true
+    if (component.melted) return
+    if (component.controlRatio >= 0.999) {
+      showReactorHint('请先降低刹车比例（拖动滑条拉出控制棒）再启动反应')
+      return
+    }
+    component.running = true
   }
 
   function emergencyScram(component: FissionReactorComponent): void {
@@ -1021,6 +1048,7 @@ export const useGameStore = defineStore('game', () => {
     onPortClick,
     cancelWirePending,
     sellComponent,
+    reactorHint,
     startFission,
     emergencyScram,
     setReactorRodRatio,

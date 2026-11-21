@@ -24,6 +24,7 @@ import { PipeComponent } from '../behaviors/PipeComponent'
 import { TankComponent } from '../behaviors/TankComponent'
 import { CondenserComponent } from '../behaviors/CondenserComponent'
 import { FissionReactorComponent } from '../behaviors/FissionReactorComponent'
+import { WaterPumpComponent } from '../behaviors/WaterPumpComponent'
 import { ALL_DEFS } from './definitions'
 
 export interface ComponentCreateOptions {
@@ -86,6 +87,8 @@ export function createComponent(def: ComponentDefinition, options?: ComponentCre
       return new CondenserComponent(def)
     case 'fissionReactor':
       return new FissionReactorComponent(def)
+    case 'waterPump':
+      return new WaterPumpComponent(def)
     case 'battery':
       return new BatteryComponent(def, options?.batteryStateOfCharge, options?.batteryCell)
     case 'switch':

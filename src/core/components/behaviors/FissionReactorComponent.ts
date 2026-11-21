@@ -7,8 +7,11 @@ import { isFluidReceptor, isFluidSupplier, modeAdmits, type FluidInterface } fro
 import type { TickContext } from '../../sim/TickContext'
 import { CELL_SIZE } from '../../../shared/constants'
 
-const AMBIENT_TEMP = 300
+const AMBIENT_TEMP = 298
 const HEAT_RISE_PER_SEC = 120
+const RAMP_UP_PER_SEC = 1 / 10
+const RAMP_DOWN_PER_SEC = 1 / 30
+const BALANCE_LINE = 0.75
 
 interface CellEdge {
   cellX: number
@@ -23,10 +26,13 @@ function samePort(a: CellEdge, b: CellEdge): boolean {
 export class FissionReactorComponent extends BaseComponent {
   readonly waterRate: number
   readonly steamRate: number
+  readonly heatRatio: number
   readonly operatingTemp: number
   readonly meltdownTemp: number
   running = false
   controlRatio = 1
+  reactorPower = 0
+  balance = 0.5
   coreTempK = AMBIENT_TEMP
   melted = false
 
@@ -34,8 +40,9 @@ export class FissionReactorComponent extends BaseComponent {
     super(def)
     this.waterRate = paramNumber(def, 'waterRate', 15)
     this.steamRate = paramNumber(def, 'steamRate', 30)
-    this.operatingTemp = paramNumber(def, 'operatingTemp', 650)
-    this.meltdownTemp = paramNumber(def, 'meltdownTemp', 1200)
+    this.heatRatio = paramNumber(def, 'heatRatio', 0.4)
+    this.operatingTemp = paramNumber(def, 'operatingTemp', 1900)
+    this.meltdownTemp = paramNumber(def, 'meltdownTemp', 3200)
   }
 
   getResistance(): number {
@@ -54,13 +61,23 @@ export class FissionReactorComponent extends BaseComponent {
   }
 
   get reactivity(): number {
-    if (!this.running || this.melted) return 0
-    return Math.max(0, Math.min(1, 1 - this.controlRatio))
+    return this.melted ? 0 : this.reactorPower
   }
 
   onTick(ctx: TickContext): void {
     if (this.melted) return
     const host = ctx.host
+    if (this.running) {
+      const target = Math.max(0, Math.min(1, 1 - this.controlRatio))
+      if (this.reactorPower < target) this.reactorPower = Math.min(target, this.reactorPower + RAMP_UP_PER_SEC * ctx.dt)
+      else if (this.reactorPower > target) this.reactorPower = Math.max(target, this.reactorPower - RAMP_DOWN_PER_SEC * ctx.dt)
+      if (this.reactorPower <= 0.0001) {
+        this.reactorPower = 0
+        this.running = false
+      }
+    } else {
+      this.reactorPower = Math.max(0, this.reactorPower - RAMP_DOWN_PER_SEC * ctx.dt)
+    }
     const reactivity = this.reactivity
     const interfaces = this.getFluidInterfaces()
     const inInterfaces = interfaces.filter((iface) => iface.mode === 'in')
@@ -134,12 +151,16 @@ export class FissionReactorComponent extends BaseComponent {
       }
     }
     const waterNeed = (this.steamRate / 3) * reactivity * ctx.dt
-    const supplyRatio = waterNeed > 0.0001 ? Math.min(1, pulled / waterNeed) : 1
+    const coolingRate = waterNeed > 0.0001 ? pulled / waterNeed : 1.5
+    const balance = coolingRate / (coolingRate + reactivity * this.heatRatio)
+    this.balance = Math.max(0, Math.min(1, balance))
+    const dev = balance - BALANCE_LINE
     if (reactivity > 0) {
-      if (supplyRatio >= 0.999) {
-        this.coreTempK += (this.operatingTemp - this.coreTempK) * Math.min(1, ctx.dt * 0.8)
+      if (dev >= 0) {
+        const targetTemp = AMBIENT_TEMP + (this.operatingTemp - AMBIENT_TEMP) * reactivity
+        this.coreTempK += (targetTemp - this.coreTempK) * Math.min(1, ctx.dt * 1.5 * Math.min(1, dev / 0.04))
       } else {
-        this.coreTempK += HEAT_RISE_PER_SEC * reactivity * (1 - supplyRatio) * ctx.dt
+        this.coreTempK += HEAT_RISE_PER_SEC * reactivity * Math.min(2, -dev / 0.25) * ctx.dt
       }
     } else {
       this.coreTempK += (AMBIENT_TEMP - this.coreTempK) * Math.min(1, ctx.dt * 0.5)

@@ -7,6 +7,8 @@ import { SteamEngineComponent } from '../src/core/components/behaviors/SteamEngi
 import { TurbineComponent } from '../src/core/components/behaviors/TurbineComponent'
 import { TankComponent } from '../src/core/components/behaviors/TankComponent'
 import { FissionReactorComponent } from '../src/core/components/behaviors/FissionReactorComponent'
+import { WaterPumpComponent } from '../src/core/components/behaviors/WaterPumpComponent'
+import { terrainTypeAt } from '../src/core/world/terrain'
 import { ResistiveComponent } from '../src/core/components/behaviors/ResistiveComponent'
 
 function addPipe(sim: Simulation, x: number, y: number) {
@@ -60,15 +62,19 @@ describe('fluids', () => {
     reactor.y = 0
     sim.addComponent(reactor)
     const waterPipe = addPipe(sim, 1, -1)
+    const waterPipe2 = addPipe(sim, 3, -1)
     const steamPipe = addPipe(sim, 1, 3)
-    sim.pipeSystem.pushFluid(waterPipe, 'water', 50)
+    sim.pipeSystem.pushFluid(waterPipe, 'water', 500)
+    sim.pipeSystem.pushFluid(waterPipe2, 'water', 500)
     reactor.running = true
     reactor.controlRatio = 0
-    sim.tick()
+    for (let i = 0; i < 150; i++) sim.tick()
     const steam = sim.pipeSystem.networkOf(steamPipe)
     expect(steam?.fluidId).toBe('steam')
-    expect(steam?.volume).toBeGreaterThan(0)
-    expect(sim.pipeSystem.networkOf(waterPipe)?.volume).toBeLessThan(50)
+    expect(steam?.volume).toBeGreaterThan(3)
+    expect(sim.pipeSystem.networkOf(waterPipe)?.volume).toBeLessThan(500)
+    expect(reactor.reactorPower).toBeGreaterThan(0.99)
+    expect(reactor.coreTempK).toBeGreaterThan(1700)
     expect(reactor.coreTempK).toBeLessThan(reactor.meltdownTemp)
   })
 
@@ -88,8 +94,9 @@ describe('fluids', () => {
     sim.addComponent(survivor)
     reactor.running = true
     reactor.controlRatio = 0
-    reactor.coreTempK = 1150
-    for (let i = 0; i < 10; i++) sim.tick()
+    reactor.reactorPower = 1
+    reactor.coreTempK = 3100
+    for (let i = 0; i < 20; i++) sim.tick()
     expect(reactor.melted).toBe(true)
     expect(sim.components).not.toContain(victim)
     expect(sim.components).not.toContain(reactor)
@@ -98,6 +105,61 @@ describe('fluids', () => {
     expect(sim.incomeFactorAt(victim.x, victim.y)).toBe(0.25)
     expect(sim.workFactorAt(victim.x, victim.y)).toBe(0.1)
     expect(sim.incomeFactorAt(survivor.x, survivor.y)).toBe(1)
+  })
+
+  it('water pump supplies water only on water terrain, flow scales with power', () => {
+    let waterX = 0
+    let waterY = 0
+    let landX = 0
+    let landY = 0
+    let found = false
+    for (let seed = 1; seed < 200 && !found; seed++) {
+      let water = false
+      let land = false
+      for (let x = -100; x < 100 && !(water && land); x += 2) {
+        for (let y = -100; y < 100 && !(water && land); y += 2) {
+          const type = terrainTypeAt(seed, x, y)
+          if (!water && (type === 'ocean' || type === 'lake')) {
+            waterX = x
+            waterY = y
+            water = true
+          }
+          if (!land && type === 'grass') {
+            landX = x
+            landY = y
+            land = true
+          }
+        }
+      }
+      found = water && land
+    }
+    expect(found).toBe(true)
+    const sim = new Simulation()
+    sim.terrainSeed = 1
+    const pump = createComponentById('water_pump') as WaterPumpComponent
+    pump.x = waterX
+    pump.y = waterY
+    sim.addComponent(pump)
+    const crank = createComponentById('hand_crank') as VoltageSourceComponent
+    crank.rotationSpeed = Math.PI * 2
+    crank.rotationDrive = 1
+    crank.x = waterX + 10
+    crank.y = waterY
+    sim.addComponent(crank)
+    sim.connect(crank.getPort(0), pump.getPort(1))
+    sim.connect(crank.getPort(1), pump.getPort(0))
+    for (let i = 0; i < 5; i++) sim.tick()
+    expect(Math.abs(pump.current)).toBeGreaterThan(0)
+    expect(pump.onWater).toBe(true)
+    const drainPipe = addPipe(sim, waterX + 1, waterY)
+    for (let i = 0; i < 3; i++) sim.tick()
+    const network = sim.pipeSystem.networkOf(drainPipe)
+    expect(network?.fluidId).toBe('water')
+    expect(network?.volume).toBeGreaterThan(0)
+    pump.x = landX
+    pump.y = landY
+    expect(pump.onWater).toBe(false)
+    expect(pump.provideFluid(100)).toBeNull()
   })
 
   it('steam engine pushes steam through pipes and turbine converts it to emf', () => {

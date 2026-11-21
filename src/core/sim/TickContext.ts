@@ -22,6 +22,7 @@ export interface SimulationHost {
   meltdownAt(cx: number, cy: number): void
   incomeFactorAt(x: number, y: number): number
   workFactorAt(x: number, y: number): number
+  terrainSeed: number
   requestDestroy(component: BaseComponent): void
 }
 

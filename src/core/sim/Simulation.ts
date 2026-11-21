@@ -71,6 +71,7 @@ export class Simulation {
   dt = 0.1
   simTime = 0
   contaminationZone: { x: number; y: number; radius: number } | null = null
+  terrainSeed: number = Math.floor(Math.random() * 2147483647)
   clickHeat = 1
   clickCooldown = 0.5
   lastIncome = 0

@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { EnergyType } from '../src/core/energy/EnergyType'
 import { useGameStore } from '../src/ui/stores/useGameStore'
 import { TechTree } from '../src/core/tech/TechTree'
+import { terrainTypeAt, type TerrainType } from '../src/core/world/terrain'
 import { SaveService } from '../src/core/save/SaveService'
 import { createComponentById } from '../src/core/components/registry/componentRegistry'
 import { WireComponent } from '../src/core/components/behaviors/WireComponent'
@@ -156,6 +157,27 @@ describe('Converters and systems', () => {
     expect(tech.isUnlocked('roentgen')).toBe(true)
     expect(tech.buy('roentgen')).toBe(true)
     expect(tech.isComponentUnlocked('fission_reactor')).toBe(true)
+  })
+
+  it('terrain: deterministic per seed and terrain seed survives save roundtrip', () => {
+    const a1 = terrainTypeAt(42, 10, 10)
+    const a2 = terrainTypeAt(42, 10, 10)
+    expect(a1).toBe(a2)
+    expect(['ocean', 'lake', 'sand', 'grass']).toContain(a1)
+    const types = new Set<TerrainType>()
+    for (let x = -500; x < 500; x += 3) {
+      for (let y = -500; y < 500; y += 3) {
+        types.add(terrainTypeAt(12345, x, y))
+        if (types.size === 4) break
+      }
+      if (types.size === 4) break
+    }
+    expect(types.size).toBeGreaterThanOrEqual(3)
+    const sim = new Simulation()
+    sim.terrainSeed = 987654
+    const saver = new SaveService(sim, new TechTree(sim))
+    const data = saver.serialize()
+    expect(data.terrainSeed).toBe(987654)
   })
 
   it('wire resistance follows anchor distance', () => {

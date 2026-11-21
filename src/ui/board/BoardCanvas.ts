@@ -22,8 +22,10 @@ import { CondenserComponent } from '../../core/components/behaviors/CondenserCom
 import { SteamEngineComponent } from '../../core/components/behaviors/SteamEngineComponent'
 import { TurbineComponent } from '../../core/components/behaviors/TurbineComponent'
 import { FissionReactorComponent } from '../../core/components/behaviors/FissionReactorComponent'
+import { WaterPumpComponent } from '../../core/components/behaviors/WaterPumpComponent'
 import { MotorComponent } from '../../core/components/behaviors/MotorComponent'
 import { FluidParticle, integrateFluidParticles, fluidReceptors } from './fluidParticles'
+import { terrainChunkCanvas, TERRAIN_CHUNK_CELLS } from './terrainChunks'
 import { buildFluidLinks, interfaceCell, interfaceKey, interfaceWorldPos } from '../../core/fluids/fluidInterface'
 import { CELL_SIZE, componentAt, portPosition } from './boardMath'
 import { useSettingsStore, formatWithPrefix, formatAngularValue } from '../settings/useSettingsStore'
@@ -48,6 +50,7 @@ export interface BoardCallbacks {
   getPipeNetworks(): PipeNetwork[]
   getPipeNetwork(pipe: PipeComponent): PipeNetwork | null
   getContamination(): { x: number; y: number; radius: number } | null
+  getTerrainSeed(): number
   drainFluidEmissions(): FluidEmission[]
   onFreeTerminalMove(component: BaseComponent, px: number, py: number): void
   getLockedComponents(): BaseComponent[]
@@ -807,6 +810,7 @@ export class BoardCanvas {
     ctx.fillStyle = '#10141b'
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height)
     ctx.setTransform(dpr * this.zoom, 0, 0, dpr * this.zoom, dpr * this.panX, dpr * this.panY)
+    this.drawTerrain()
     this.drawGrid()
     this.drawFields()
     this.spawnElectrons()
@@ -1134,6 +1138,21 @@ export class BoardCanvas {
     ctx.fill()
   }
 
+  private drawTerrain(): void {
+    const seed = this.callbacks.getTerrainSeed()
+    const view = this.worldView()
+    const chunkW = TERRAIN_CHUNK_CELLS * CELL_SIZE
+    const c0x = Math.floor(view.x0 / chunkW)
+    const c1x = Math.floor(view.x1 / chunkW)
+    const c0y = Math.floor(view.y0 / chunkW)
+    const c1y = Math.floor(view.y1 / chunkW)
+    for (let cy = c0y; cy <= c1y; cy++) {
+      for (let cx = c0x; cx <= c1x; cx++) {
+        this.ctx.drawImage(terrainChunkCanvas(seed, cx, cy), cx * chunkW, cy * chunkW)
+      }
+    }
+  }
+
   private drawGrid(): void {
     const ctx = this.ctx
     const view = this.worldView()
@@ -1373,6 +1392,10 @@ export class BoardCanvas {
       }
       if (component instanceof FissionReactorComponent) {
         this.drawFissionReactor(component, selected)
+        continue
+      }
+      if (component instanceof WaterPumpComponent) {
+        this.drawWaterPump(component, selected)
         continue
       }
       if (component instanceof TurbineComponent) {
@@ -1933,7 +1956,7 @@ export class BoardCanvas {
     const h = reactor.height * CELL_SIZE
     ctx.fillStyle = '#263238'
     ctx.fillRect(x + 2, y + 2, w - 4, h - 4)
-    const tempRatio = Math.max(0, Math.min(1, (reactor.coreTempK - 300) / 900))
+    const tempRatio = Math.max(0, Math.min(1, (reactor.coreTempK - 298) / (3200 - 298)))
     const coreColor = `rgb(${Math.round(90 + 165 * tempRatio)}, ${Math.round(140 - 60 * tempRatio)}, ${Math.round(180 - 140 * tempRatio)})`
     ctx.fillStyle = coreColor
     const coreW = w - 60
@@ -1944,6 +1967,18 @@ export class BoardCanvas {
     for (const rx of [x + 52, x + w / 2, x + w - 52]) {
       ctx.fillRect(rx - 4, rodTop, 8, rodBottom - rodTop)
     }
+    const barX = x + 34
+    const barW = w - 68
+    const barY = y + h / 2 - 36
+    const lineT = Math.max(0, Math.min(1, reactor.balance))
+    ctx.fillStyle = '#0d1117'
+    ctx.fillRect(barX, barY, barW, 8)
+    ctx.fillStyle = '#42a5f5'
+    ctx.fillRect(barX, barY, barW * lineT, 8)
+    ctx.fillStyle = '#ef5350'
+    ctx.fillRect(barX + barW * lineT, barY, barW * (1 - lineT), 8)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(barX + barW * lineT - 1.5, barY - 3, 3, 14)
     ctx.strokeStyle = selected === reactor ? '#f1c40f' : '#546e7a'
     ctx.lineWidth = 2
     ctx.strokeRect(x + 2, y + 2, w - 4, h - 4)
@@ -1958,8 +1993,54 @@ export class BoardCanvas {
     ctx.textAlign = 'center'
     ctx.fillText(reactor.melted ? '熔毁' : reactor.running ? '运行中' : '停机', x + w / 2, y + h / 2 - 8)
     ctx.fillText(`${reactor.coreTempK.toFixed(0)}K`, x + w / 2, y + h / 2 + 6)
-    ctx.fillText(`控制棒 ${(reactor.controlRatio * 100).toFixed(0)}%`, x + w / 2, y + h / 2 + 20)
+    ctx.fillText(`反应速率 ${(reactor.reactivity * 100).toFixed(0)}%`, x + w / 2, y + h / 2 + 20)
     ctx.textAlign = 'start'
+    if (reactor.coreTempK >= 2500 && !reactor.melted) {
+      const blink = 0.5 + 0.5 * Math.sin(performance.now() / 150)
+      ctx.save()
+      ctx.globalAlpha = 0.65 + 0.35 * blink
+      ctx.fillStyle = '#d32f2f'
+      ctx.fillRect(x + w / 2 - 58, y - 26, 116, 20)
+      ctx.globalAlpha = 1
+      ctx.fillStyle = '#ffffff'
+      ctx.font = 'bold 12px system-ui, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText('熔毁警告', x + w / 2, y - 12)
+      ctx.textAlign = 'start'
+      ctx.restore()
+    }
+  }
+
+  private drawWaterPump(pump: WaterPumpComponent, selected: BaseComponent | null): void {
+    const ctx = this.ctx
+    const x = pump.x * CELL_SIZE
+    const y = pump.y * CELL_SIZE
+    const powered = Math.abs(pump.current) > 0.05
+    ctx.fillStyle = '#37474f'
+    ctx.fillRect(x + 4, y + 4, CELL_SIZE - 8, CELL_SIZE - 8)
+    ctx.fillStyle = pump.onWater ? '#4fc3f7' : '#8d6e63'
+    ctx.beginPath()
+    ctx.arc(x + CELL_SIZE / 2, y + CELL_SIZE / 2, CELL_SIZE / 3, 0, Math.PI * 2)
+    ctx.fill()
+    if (powered && pump.onWater) {
+      const spin = performance.now() / 1000 * 6
+      ctx.save()
+      ctx.translate(x + CELL_SIZE / 2, y + CELL_SIZE / 2)
+      ctx.rotate(spin)
+      ctx.strokeStyle = '#e1f5fe'
+      ctx.lineWidth = 2
+      for (let i = 0; i < 3; i++) {
+        ctx.rotate(Math.PI * 2 / 3)
+        ctx.beginPath()
+        ctx.moveTo(0, 0)
+        ctx.lineTo(0, -CELL_SIZE / 4)
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
+    ctx.strokeStyle = selected === pump ? '#f1c40f' : powered ? '#69f0ae' : '#546e7a'
+    ctx.lineWidth = 2
+    ctx.strokeRect(x + 4, y + 4, CELL_SIZE - 8, CELL_SIZE - 8)
   }
 
   private drawTurbine(turbine: TurbineComponent): void {
