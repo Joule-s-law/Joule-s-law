@@ -27,7 +27,7 @@ export interface TechNode {
 	displayName: string
 	bio: string
 	levelEffect: (nextLevel: number) => string
-	parentId: string | null
+	parentIds: string[]
 	maxLevel: number
 	baseCost: number
 	costScaling: number
@@ -45,7 +45,7 @@ const TECH_LIST: TechNode[] = [
 		displayName: '物理必修三',
 		bio: '高中物理合订本：静电场、直流电路、磁场与电磁感应的统帅课程。',
 		levelEffect: () => '收入 +100%',
-		parentId: null,
+		parentIds: [],
 		maxLevel: 5,
 		baseCost: 1500 / 2.5,
 		costScaling: 2.5,
@@ -56,7 +56,7 @@ const TECH_LIST: TechNode[] = [
 		displayName: '希格斯',
 		bio: '彼得·希格斯（1929–2024），英国理论物理学家。1964 年预言希格斯玻色子，赋予基本粒子以质量；2012 年该粒子在 LHC 被证实，次年获诺贝尔物理学奖。',
 		levelEffect: () => '点击产热 +1J，点击冷却 ×90%',
-		parentId: 'physics_must_3',
+		parentIds: ['physics_must_3'],
 		maxLevel: 10,
 		baseCost: 1.63,
 		costScaling: 1.8,
@@ -70,7 +70,7 @@ const TECH_LIST: TechNode[] = [
 		displayName: '焦耳',
 		bio: '詹姆斯·普雷斯科特·焦耳（1818–1889），英国物理学家，啤酒厂主人。自制温度计测定电流热效应与热功当量，证明热是能量的一种形式，能量守恒定律的奠基人之一。',
 		levelEffect: () => '热量收入 +8%',
-		parentId: 'physics_must_3',
+		parentIds: ['physics_must_3'],
 		maxLevel: 10,
 		baseCost: 1.63,
 		costScaling: 1.8,
@@ -81,7 +81,7 @@ const TECH_LIST: TechNode[] = [
 		displayName: '普朗克',
 		bio: '马克斯·普朗克（1858–1947），德国物理学家。1900 年为解释黑体辐射提出能量量子化假说，开启量子力学时代，1918 年获诺贝尔物理学奖。',
 		levelEffect: (n) => `光发射强度 +10%${n === 1 ? '，并解锁「灯泡」与「光伏板」' : ''}`,
-		parentId: 'physics_must_3',
+		parentIds: ['physics_must_3'],
 		maxLevel: 10,
 		baseCost: 2.04,
 		costScaling: 1.8,
@@ -95,7 +95,7 @@ const TECH_LIST: TechNode[] = [
 		displayName: '居里',
 		bio: '玛丽·居里（1867–1934），波兰-法国物理学家、化学家。发现钋与镭并开创放射性研究，是至今唯一在物理与化学两个学科都获诺贝尔奖的科学家。',
 		levelEffect: () => '化学能收入 +15%',
-		parentId: 'physics_must_3',
+		parentIds: ['physics_must_3'],
 		maxLevel: 10,
 		baseCost: 2.04,
 		costScaling: 1.8,
@@ -108,7 +108,7 @@ const TECH_LIST: TechNode[] = [
 		displayName: '法拉第',
 		bio: '迈克尔·法拉第（1791–1867），英国物理学家、化学家，装订工学徒出身。1831 年发现电磁感应并造出第一台发电机模型，"场"概念的奠基人。',
 		levelEffect: (n) => `传感元件电动势 +6%${n === 1 ? '，并解锁「通电线圈」与「感应线圈」' : ''}`,
-		parentId: 'physics_must_3',
+		parentIds: ['physics_must_3'],
 		maxLevel: 10,
 		baseCost: 2.71,
 		costScaling: 1.8,
@@ -122,7 +122,7 @@ const TECH_LIST: TechNode[] = [
 		displayName: '欧姆',
 		bio: '格奥尔格·西蒙·欧姆（1789–1854），德国物理学家、中学教师。1826 年用自制器材发表欧姆定律 I=U/R，成果长期备受冷遇，晚年才获得承认。',
 		levelEffect: (n) => `全体元件额定电流 ×110%${n === 1 ? '，并解锁「滑动变阻器」、「电流表」与「电压表」' : ''}`,
-		parentId: 'physics_must_3',
+		parentIds: ['physics_must_3'],
 		maxLevel: 10,
 		baseCost: 0.53,
 		costScaling: 2,
@@ -136,7 +136,7 @@ const TECH_LIST: TechNode[] = [
 		displayName: '卡诺',
 		bio: '萨迪·卡诺（1796–1832），法国军事工程师。1824 年提出理想热机循环与卡诺效率，奠定热力学第二定律，被誉为"热力学之父"。',
 		levelEffect: (n) => `能量转换效率 +1%${n === 1 ? '，并解锁「电动机」、「蒸汽机」与「涡轮发电机」' : ''}`,
-		parentId: 'joule',
+		parentIds: ['joule'],
 		maxLevel: 10,
 		baseCost: 2.74,
 		costScaling: 2,
@@ -150,18 +150,32 @@ const TECH_LIST: TechNode[] = [
 		displayName: '爱因斯坦',
 		bio: '阿尔伯特·爱因斯坦（1879–1955），出生于德国的理论物理学家。1905 年提出狭义相对论与光电方程，1915 年完成广义相对论，1921 年获诺贝尔物理学奖。',
 		levelEffect: () => '收入 +15%',
-		parentId: 'carnot',
+		parentIds: ['carnot'],
 		maxLevel: 10,
 		baseCost: 10.26,
 		costScaling: 2,
 		effects: [{ kind: 'globalMultiplier', perLevel: 0.15 }],
 	},
 	{
+		id: 'roentgen',
+		displayName: '伦琴',
+		bio: '威廉·康拉德·伦琴（1845–1923），德国物理学家。1895 年在研究阴极射线时意外发现 X 射线，拍下了人类第一张骨骼照片，1901 年成为首位诺贝尔物理学奖得主。射线探测与放射性计量的开端由此埋下伏笔。',
+		levelEffect: (n) => `能量转换效率 +2%${n === 1 ? '，并解锁「裂变反应堆」' : ''}`,
+		parentIds: ['curie', 'einstein'],
+		maxLevel: 5,
+		baseCost: 120,
+		costScaling: 2.2,
+		effects: [
+			{ kind: 'unlockComponents', perLevel: 0, target: 'fission_reactor' },
+			{ kind: 'efficiencyBoost', perLevel: 0.02 },
+		],
+	},
+	{
 		id: 'bell',
 		displayName: '贝尔',
 		bio: '亚历山大·格拉汉姆·贝尔（1847–1922），苏格兰-美国发明家。1876 年获得电话专利并创办贝尔电话公司，晚年资助了美国《科学》杂志的创刊。',
 		levelEffect: (n) => `声能收入 +15%${n === 1 ? '，并解锁「蜂鸣器」与「麦克风」' : ''}`,
-		parentId: 'curie',
+		parentIds: ['curie'],
 		maxLevel: 10,
 		baseCost: 2.05,
 		costScaling: 2,
@@ -175,7 +189,7 @@ const TECH_LIST: TechNode[] = [
 		displayName: '特斯拉',
 		bio: '尼古拉·特斯拉（1856–1943），塞尔维亚-美国发明家、电气工程师。推动交流输电系统落地，发明感应电动机与特斯拉线圈，一生持有一百余项专利。',
 		levelEffect: (n) => `传感元件电动势 +5%${n === 1 ? '，并解锁「电池组」、「原电池」、「二倍升压器」与「二倍降压器」' : ''}`,
-		parentId: 'faraday',
+		parentIds: ['faraday'],
 		maxLevel: 10,
 		baseCost: 3.42,
 		costScaling: 2,
@@ -189,7 +203,7 @@ const TECH_LIST: TechNode[] = [
 		displayName: '麦克斯韦',
 		bio: '詹姆斯·克拉克·麦克斯韦（1831–1879），苏格兰物理学家。用四组方程把电、磁、光统一为同一电磁现象，也是用统计方法研究分子运动的开创者。',
 		levelEffect: () => '所有齿轮的转速上限 +2π/s',
-		parentId: 'ohm',
+		parentIds: ['ohm'],
 		maxLevel: 10,
 		baseCost: 1.17,
 		costScaling: 2,
@@ -200,7 +214,7 @@ const TECH_LIST: TechNode[] = [
 		displayName: '昂内斯',
 		bio: '海克·卡末林·昂内斯（1853–1926），荷兰物理学家。1908 年首次液化氦气，1911 年借此发现超导现象，1913 年获诺贝尔物理学奖。',
 		levelEffect: (n) => `解锁${[...["铁", "钨", "铜", "银"].map(e => `${e}导线`), "超导体"][n - 1]}`,
-		parentId: 'ohm',
+		parentIds: ['ohm'],
 		maxLevel: 5,
 		baseCost: 60,
 		costScaling: 4,
@@ -217,7 +231,7 @@ const TECH_LIST: TechNode[] = [
 		displayName: '末影接口',
 		bio: '？？？（资料删除）该接口的制造者不详。它在你的科技树深处静静等待，直到有人望向世界的边界。',
 		levelEffect: () => '解锁「第四发电机」',
-		parentId: 'physics_must_3',
+		parentIds: ['physics_must_3'],
 		maxLevel: 1,
 		baseCost: 9000,
 		costScaling: 1,
@@ -241,7 +255,7 @@ export class TechTree {
 	resetLevels(): void {
 		this.levels.clear()
 		for (const node of TECH_NODES) {
-			this.levels.set(node.id, node.parentId === null ? ROOT_INITIAL_LEVEL : 0)
+			this.levels.set(node.id, node.parentIds.length === 0 ? ROOT_INITIAL_LEVEL : 0)
 		}
 		this.unlockedComponents.clear()
 		for (const id of BASE_UNLOCKED_COMPONENTS) this.unlockedComponents.add(id)
@@ -260,15 +274,17 @@ export class TechTree {
 	isUnlocked(id: string): boolean {
 		const node = this.getNode(id)
 		if (node === undefined) return false
-		if (node.parentId === null) return true
-		return this.getLevel(node.parentId) >= (node.requiredParentLevel ?? 1)
+		if (node.parentIds.length === 0) return true
+		const required = node.requiredParentLevel ?? 1
+		return node.parentIds.every((parentId) => this.getLevel(parentId) >= required)
 	}
 
 	isRevealed(id: string): boolean {
 		const node = this.getNode(id)
 		if (node === undefined) return false
-		if (node.requiredParentLevel === undefined) return true
-		return this.getLevel(node.parentId ?? '') >= node.requiredParentLevel
+		if (node.requiredParentLevel === undefined || node.parentIds.length === 0) return true
+		const required = node.requiredParentLevel
+		return node.parentIds.every((parentId) => this.getLevel(parentId) >= required)
 	}
 
 	canBuy(id: string): boolean {
@@ -305,7 +321,7 @@ export class TechTree {
 
 	forceUnlockAll(): void {
 		for (const node of TECH_NODES) {
-			if (node.parentId !== null && (node.requiredParentLevel ?? 1) > 1) continue
+			if (node.parentIds.length > 0 && (node.requiredParentLevel ?? 1) > 1) continue
 			this.levels.set(node.id, node.maxLevel)
 		}
 		this.recompute()

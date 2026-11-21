@@ -70,6 +70,7 @@ export class Simulation {
   gearMaxOmegaBonus = 0
   dt = 0.1
   simTime = 0
+  contaminationZone: { x: number; y: number; radius: number } | null = null
   clickHeat = 1
   clickCooldown = 0.5
   lastIncome = 0
@@ -315,6 +316,28 @@ export class Simulation {
 
   requestDestroy(component: BaseComponent): void {
     this.pendingDestroys.add(component)
+  }
+
+  meltdownAt(cx: number, cy: number): void {
+    const radius = 200
+    this.contaminationZone = { x: cx, y: cy, radius }
+    for (const component of [...this.components]) {
+      const dx = component.x + component.width / 2 - cx
+      const dy = component.y + component.height / 2 - cy
+      if (Math.hypot(dx, dy) <= radius) this.removeComponent(component)
+    }
+  }
+
+  incomeFactorAt(x: number, y: number): number {
+    const zone = this.contaminationZone
+    if (zone === null) return 1
+    return Math.hypot(x - zone.x, y - zone.y) <= zone.radius ? 0.25 : 1
+  }
+
+  workFactorAt(x: number, y: number): number {
+    const zone = this.contaminationZone
+    if (zone === null) return 1
+    return Math.hypot(x - zone.x, y - zone.y) <= zone.radius ? 0.1 : 1
   }
 
   private collectDestroyed(): BaseComponent[] {

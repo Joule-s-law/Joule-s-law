@@ -8,6 +8,7 @@ import { PhotonScreenComponent } from '../components/behaviors/PhotonScreenCompo
 import type { PhotonPropagation } from '../components/behaviors/PhotonScreenComponent'
 import { FreeTerminalComponent } from '../components/behaviors/FreeTerminalComponent'
 import { TankComponent } from '../components/behaviors/TankComponent'
+import { FissionReactorComponent } from '../components/behaviors/FissionReactorComponent'
 import { createComponentById } from '../components/registry/componentRegistry'
 import type { Simulation } from '../sim/Simulation'
 import type { TechTree } from '../tech/TechTree'
@@ -41,6 +42,9 @@ interface SavedComponent {
   terminalY?: number
   tankFluidId?: string | null
   tankAmount?: number
+  fissionTempK?: number
+  fissionRod?: number
+  fissionRunning?: boolean
 }
 
 interface SavedLink {
@@ -59,6 +63,7 @@ interface SaveData {
   techLevels: Record<string, number>
   components: SavedComponent[]
   links: SavedLink[]
+  contamination?: { x: number; y: number; radius: number } | null
 }
 
 export interface LoadResult {
@@ -147,6 +152,9 @@ export class SaveService {
         : {}),
       ...(component instanceof FreeTerminalComponent ? { terminalX: component.posX, terminalY: component.posY } : {}),
       ...(component instanceof TankComponent ? { tankFluidId: component.storedFluidId, tankAmount: component.storedAmount } : {}),
+      ...(component instanceof FissionReactorComponent
+        ? { fissionTempK: component.coreTempK, fissionRod: component.controlRatio, fissionRunning: component.running }
+        : {}),
     }))
     const componentIndex = new Map<BaseComponent, number>(this.sim.components.map((component, index) => [component, index]))
     const links: SavedLink[] = []
@@ -182,6 +190,7 @@ export class SaveService {
       techLevels: this.techTree.exportLevels(),
       components,
       links,
+      contamination: this.sim.contaminationZone,
     }
   }
 
@@ -231,6 +240,11 @@ export class SaveService {
         component.width = saved.photonWidth
         component.height = saved.photonHeight
       }
+      if (component instanceof FissionReactorComponent) {
+        if (saved.fissionTempK !== undefined) component.coreTempK = saved.fissionTempK
+        if (saved.fissionRod !== undefined) component.controlRatio = saved.fissionRod
+        if (saved.fissionRunning !== undefined) component.running = saved.fissionRunning
+      }
       this.sim.addComponent(component)
       components.push(component)
     }
@@ -243,6 +257,7 @@ export class SaveService {
       if (portA === undefined || portB === undefined) continue
       this.sim.connect(portA, portB)
     }
+    this.sim.contaminationZone = data.contamination ?? null
     const elapsedSeconds = Math.min(OFFLINE_CAP_SECONDS, Math.max(0, (Date.now() - data.savedAtRealMs) / 1000))
     const offlineGained = data.incomePerSecond * elapsedSeconds * OFFLINE_EFFICIENCY
     this.sim.economy.money += offlineGained

@@ -18,7 +18,7 @@
         <div class="name">{{ selected.displayName }}</div>
         <div class="desc">{{ selected.bio }}</div>
         <div class="row"><span>等级</span><span>{{ selected.level }} / {{ selected.maxLevel }}</span></div>
-        <div v-if="selected.parentName !== null" class="row"><span>前置</span><span>{{ selected.parentName }}</span></div>
+        <div v-if="selected.parentNames.length > 0" class="row"><span>前置</span><span>{{ selected.parentNames.join('、') }}</span></div>
         <div class="row"><span>下一级费用</span><span>¥ {{ formatCost(selected.cost) }}</span></div>
         <button
           v-if="selected.unlocked && selected.level < selected.maxLevel"
@@ -33,7 +33,7 @@
           <span>{{ selected.levelEffect }}</span>
         </div>
         <div v-else-if="selected.level >= selected.maxLevel" class="maxed">已满级</div>
-        <div v-else class="locked-tip">需先将「{{ selected.parentName }}」升至 1 级</div>
+        <div v-else class="locked-tip">需先将所有前置（{{ selected.parentNames.join('、') }}）各升至 1 级</div>
       </aside>
       <aside v-else class="detail placeholder">
         <p>点击节点查看详情</p>
@@ -163,20 +163,23 @@ function render(): void {
 }
 
 function drawLinks(context: CanvasRenderingContext2D): void {
+  const byId = new Map(nodes.value.map((n) => [n.id, n]))
   for (const node of nodes.value) {
-    if (node.parentName === null) continue
-    const parent = nodes.value.find((n) => n.displayName === node.parentName)
-    if (parent === undefined) continue
-    const x1 = parent.x + NODE_W
-    const y1 = parent.y + NODE_H / 2
-    const x2 = node.x
-    const y2 = node.y + NODE_H / 2
-    context.strokeStyle = node.level > 0 ? '#4fc3f7' : 'rgba(120, 144, 156, 0.4)'
-    context.lineWidth = node.level > 0 ? 2.5 : 1.5
-    context.beginPath()
-    context.moveTo(x1, y1)
-    context.bezierCurveTo(x1 + 40, y1, x2 - 40, y2, x2, y2)
-    context.stroke()
+    if (node.parentIds.length === 0) continue
+    for (const parentId of node.parentIds) {
+      const parent = byId.get(parentId)
+      if (parent === undefined) continue
+      const x1 = parent.x + NODE_W
+      const y1 = parent.y + NODE_H / 2
+      const x2 = node.x
+      const y2 = node.y + NODE_H / 2
+      context.strokeStyle = node.level > 0 ? '#4fc3f7' : 'rgba(120, 144, 156, 0.4)'
+      context.lineWidth = node.level > 0 ? 2.5 : 1.5
+      context.beginPath()
+      context.moveTo(x1, y1)
+      context.bezierCurveTo(x1 + 40, y1, x2 - 40, y2, x2, y2)
+      context.stroke()
+    }
   }
 }
 

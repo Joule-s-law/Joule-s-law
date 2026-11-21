@@ -50,3 +50,20 @@ export const CONDENSER: ComponentDefinition = {
   width: 5,
   height: 1,
 }
+
+export const FISSION_REACTOR: ComponentDefinition = {
+  id: 'fission_reactor',
+  displayName: '裂变反应堆',
+  description: '5×3 核裂变装置：上方两个接口输入水，下方两个接口大量输出蒸汽。点击「启动反应」开始链式反应，拖动控制棒调节刹车比例。供水不足时堆芯升温，达到 1200K 即熔毁爆炸——半径 1000 格内的元件全部摧毁，区域被核污染笼罩（做功 ×10%，收入 ×25%）。',
+  loreDescription: '1942 年费米在芝加哥建成人类第一座可控核反应堆。链式反应释放的巨大能量来自质量亏损 E=mc²，而控制棒吸收中子的速度决定了它是电站还是炸弹——切尔诺贝利与福岛都提醒我们：中子不原谅疏忽。',
+  price: 6000,
+  priceScaling: 1.2,
+  portCount: 0,
+  resistance: 0,
+  ratedCurrent: 0,
+  behaviorId: 'fissionReactor',
+  behaviorParams: { waterRate: 15, steamRate: 30, operatingTemp: 650, meltdownTemp: 1200 },
+  behaviorTags: {},
+  width: 5,
+  height: 3,
+}

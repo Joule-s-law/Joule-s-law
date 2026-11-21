@@ -28,7 +28,7 @@ import { PHOTON_SCREEN } from './photon_screen'
 import { ELECTRON_GUN } from './electron_gun'
 import { CLUTCH, FLYWHEEL } from './clutch'
 import { FREE_TERMINAL } from './free_terminal'
-import { PIPE, TANK, CONDENSER } from './fluid_components'
+import { PIPE, TANK, CONDENSER, FISSION_REACTOR } from './fluid_components'
 
 export const ALL_DEFS: ComponentDefinition[] = [
   HAND_CRANK,
@@ -65,6 +65,7 @@ export const ALL_DEFS: ComponentDefinition[] = [
   PIPE,
   TANK,
   CONDENSER,
+  FISSION_REACTOR,
 ]
 
 const COMPONENT_LABELS: Record<string, string[]> = {
@@ -102,6 +103,7 @@ const COMPONENT_LABELS: Record<string, string[]> = {
   pipe: ['流体系统'],
   tank: ['流体系统', '储存'],
   condenser: ['流体系统', '凝结'],
+  fission_reactor: ['核物理', '热机'],
 }
 
 for (const def of ALL_DEFS) {
@@ -143,4 +145,5 @@ export {
   PIPE,
   TANK,
   CONDENSER,
+  FISSION_REACTOR,
 }

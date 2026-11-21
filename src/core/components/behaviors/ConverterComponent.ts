@@ -42,8 +42,11 @@ export class ConverterComponent extends BaseComponent {
     if (dissipated <= 0) return
     if (this.outputMode === 'income') {
       const effective = dissipated * this.getEffectiveEfficiency(ctx.host.converterEfficiencyBoost)
-      ctx.ledger.add(this.outputForm, effective)
-      ctx.host.emitEnergy(this.outputForm, effective, this.x + 0.5, this.y + 0.5)
+      const cx = this.x + this.width / 2
+      const cy = this.y + this.height / 2
+      const income = effective * ctx.host.incomeFactorAt(cx, cy)
+      ctx.ledger.add(this.outputForm, income)
+      ctx.host.emitEnergy(this.outputForm, income * ctx.host.workFactorAt(cx, cy), cx, cy)
     }
   }
 

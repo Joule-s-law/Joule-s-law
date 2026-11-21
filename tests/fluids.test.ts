@@ -6,6 +6,7 @@ import { VoltageSourceComponent } from '../src/core/components/behaviors/Voltage
 import { SteamEngineComponent } from '../src/core/components/behaviors/SteamEngineComponent'
 import { TurbineComponent } from '../src/core/components/behaviors/TurbineComponent'
 import { TankComponent } from '../src/core/components/behaviors/TankComponent'
+import { FissionReactorComponent } from '../src/core/components/behaviors/FissionReactorComponent'
 import { ResistiveComponent } from '../src/core/components/behaviors/ResistiveComponent'
 
 function addPipe(sim: Simulation, x: number, y: number) {
@@ -50,6 +51,53 @@ describe('fluids', () => {
     sim.removeComponent(b)
     expect(sim.pipeSystem.networkOf(a)).not.toBeNull()
     expect(sim.pipeSystem.pipeAt(1, 0)).toBeNull()
+  })
+
+  it('fission reactor converts water to steam through its four interfaces', () => {
+    const sim = new Simulation()
+    const reactor = createComponentById('fission_reactor') as FissionReactorComponent
+    reactor.x = 0
+    reactor.y = 0
+    sim.addComponent(reactor)
+    const waterPipe = addPipe(sim, 1, -1)
+    const steamPipe = addPipe(sim, 1, 3)
+    sim.pipeSystem.pushFluid(waterPipe, 'water', 50)
+    reactor.running = true
+    reactor.controlRatio = 0
+    sim.tick()
+    const steam = sim.pipeSystem.networkOf(steamPipe)
+    expect(steam?.fluidId).toBe('steam')
+    expect(steam?.volume).toBeGreaterThan(0)
+    expect(sim.pipeSystem.networkOf(waterPipe)?.volume).toBeLessThan(50)
+    expect(reactor.coreTempK).toBeLessThan(reactor.meltdownTemp)
+  })
+
+  it('reactor meltdown destroys components in radius and contaminates the zone', () => {
+    const sim = new Simulation()
+    const reactor = createComponentById('fission_reactor') as FissionReactorComponent
+    reactor.x = 0
+    reactor.y = 0
+    sim.addComponent(reactor)
+    const victim = createComponentById('resistor')
+    victim.x = 5
+    victim.y = 0
+    sim.addComponent(victim)
+    const survivor = createComponentById('resistor')
+    survivor.x = 5000
+    survivor.y = 0
+    sim.addComponent(survivor)
+    reactor.running = true
+    reactor.controlRatio = 0
+    reactor.coreTempK = 1150
+    for (let i = 0; i < 10; i++) sim.tick()
+    expect(reactor.melted).toBe(true)
+    expect(sim.components).not.toContain(victim)
+    expect(sim.components).not.toContain(reactor)
+    expect(sim.components).toContain(survivor)
+    expect(sim.contaminationZone).not.toBeNull()
+    expect(sim.incomeFactorAt(victim.x, victim.y)).toBe(0.25)
+    expect(sim.workFactorAt(victim.x, victim.y)).toBe(0.1)
+    expect(sim.incomeFactorAt(survivor.x, survivor.y)).toBe(1)
   })
 
   it('steam engine pushes steam through pipes and turbine converts it to emf', () => {

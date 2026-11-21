@@ -19,6 +19,9 @@ export interface SimulationHost {
   pipeNetworkId(pipe: PipeComponent): number | null
   pushPipeFluid(pipe: PipeComponent, fluidId: string, amount: number): number
   pullPipeFluid(pipe: PipeComponent, max: number, filter?: (fluidId: string) => boolean): { fluidId: string; amount: number } | null
+  meltdownAt(cx: number, cy: number): void
+  incomeFactorAt(x: number, y: number): number
+  workFactorAt(x: number, y: number): number
   requestDestroy(component: BaseComponent): void
 }
 

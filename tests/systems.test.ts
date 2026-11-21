@@ -142,6 +142,22 @@ describe('Converters and systems', () => {
     expect(tech.isWireMaterialUnlocked('superconductor')).toBe(true)
   })
 
+  it('tech tree: multi-parent nodes require every parent at level 1', () => {
+    const { sim } = buildSimpleLoop()
+    const tech = new TechTree(sim)
+    expect(tech.isUnlocked('roentgen')).toBe(false)
+    sim.economy.money = 1000000
+    expect(tech.buy('higgs')).toBe(true)
+    expect(tech.buy('joule')).toBe(true)
+    expect(tech.buy('carnot')).toBe(true)
+    expect(tech.buy('curie')).toBe(true)
+    expect(tech.isUnlocked('roentgen')).toBe(false)
+    expect(tech.buy('einstein')).toBe(true)
+    expect(tech.isUnlocked('roentgen')).toBe(true)
+    expect(tech.buy('roentgen')).toBe(true)
+    expect(tech.isComponentUnlocked('fission_reactor')).toBe(true)
+  })
+
   it('wire resistance follows anchor distance', () => {
     const { sim } = buildSimpleLoop()
     const wire = createComponentById('wire', {

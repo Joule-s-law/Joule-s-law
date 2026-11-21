@@ -21,6 +21,7 @@ import { TankComponent } from '../../core/components/behaviors/TankComponent'
 import { CondenserComponent } from '../../core/components/behaviors/CondenserComponent'
 import { SteamEngineComponent } from '../../core/components/behaviors/SteamEngineComponent'
 import { TurbineComponent } from '../../core/components/behaviors/TurbineComponent'
+import { FissionReactorComponent } from '../../core/components/behaviors/FissionReactorComponent'
 import { MotorComponent } from '../../core/components/behaviors/MotorComponent'
 import { FluidParticle, integrateFluidParticles, fluidReceptors } from './fluidParticles'
 import { buildFluidLinks, interfaceCell, interfaceKey, interfaceWorldPos } from '../../core/fluids/fluidInterface'
@@ -46,6 +47,7 @@ export interface BoardCallbacks {
   onPipePlace(cells: Array<{ x: number; y: number }>): void
   getPipeNetworks(): PipeNetwork[]
   getPipeNetwork(pipe: PipeComponent): PipeNetwork | null
+  getContamination(): { x: number; y: number; radius: number } | null
   drainFluidEmissions(): FluidEmission[]
   onFreeTerminalMove(component: BaseComponent, px: number, py: number): void
   getLockedComponents(): BaseComponent[]
@@ -816,6 +818,7 @@ export class BoardCanvas {
     this.drawComponents()
     this.drawPorts()
     this.drawFluidInterfaces()
+    this.drawContamination()
     this.drawChains()
     this.drawWireHandles()
     this.drawPendingWire()
@@ -1368,6 +1371,10 @@ export class BoardCanvas {
         this.drawCondenser(component, selected)
         continue
       }
+      if (component instanceof FissionReactorComponent) {
+        this.drawFissionReactor(component, selected)
+        continue
+      }
       if (component instanceof TurbineComponent) {
         this.drawTurbine(component)
         continue
@@ -1885,6 +1892,73 @@ export class BoardCanvas {
     ctx.font = '10px system-ui, sans-serif'
     ctx.textAlign = 'center'
     ctx.fillText('冷凝板', x + w / 2, y - 6)
+    ctx.textAlign = 'start'
+  }
+
+  private drawContamination(): void {
+    const zone = this.callbacks.getContamination()
+    if (zone === null) return
+    const ctx = this.ctx
+    const pulse = 0.1 + 0.04 * Math.sin(this.time * 2)
+    ctx.save()
+    ctx.fillStyle = `rgba(226, 208, 116, ${pulse.toFixed(3)})`
+    ctx.beginPath()
+    ctx.arc((zone.x + 0.5) * CELL_SIZE, (zone.y + 0.5) * CELL_SIZE, zone.radius * CELL_SIZE, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(255, 213, 79, 0.5)'
+    ctx.lineWidth = 3
+    ctx.stroke()
+    ctx.restore()
+    const view = this.worldView()
+    const centerX = (view.x0 + view.x1) / 2
+    const centerY = (view.y0 + view.y1) / 2
+    if (Math.hypot(centerX - (zone.x + 0.5) * CELL_SIZE, centerY - (zone.y + 0.5) * CELL_SIZE) > zone.radius * CELL_SIZE) return
+    const dpr = this.devicePixelRatio()
+    const cssW = this.canvas.width / dpr
+    ctx.save()
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.font = 'bold 14px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(255, 213, 79, 0.92)'
+    ctx.fillText('☢ 此处为核辐射区：做功 ×10%，收入 ×25%', cssW / 2, 34)
+    ctx.textAlign = 'start'
+    ctx.restore()
+  }
+
+  private drawFissionReactor(reactor: FissionReactorComponent, selected: BaseComponent | null): void {
+    const ctx = this.ctx
+    const x = reactor.x * CELL_SIZE
+    const y = reactor.y * CELL_SIZE
+    const w = reactor.width * CELL_SIZE
+    const h = reactor.height * CELL_SIZE
+    ctx.fillStyle = '#263238'
+    ctx.fillRect(x + 2, y + 2, w - 4, h - 4)
+    const tempRatio = Math.max(0, Math.min(1, (reactor.coreTempK - 300) / 900))
+    const coreColor = `rgb(${Math.round(90 + 165 * tempRatio)}, ${Math.round(140 - 60 * tempRatio)}, ${Math.round(180 - 140 * tempRatio)})`
+    ctx.fillStyle = coreColor
+    const coreW = w - 60
+    ctx.fillRect(x + 30, y + 22, coreW, h - 44)
+    ctx.fillStyle = 'rgba(10, 14, 18, 0.85)'
+    const rodTop = y + 6
+    const rodBottom = rodTop + (h - 12) * reactor.controlRatio
+    for (const rx of [x + 52, x + w / 2, x + w - 52]) {
+      ctx.fillRect(rx - 4, rodTop, 8, rodBottom - rodTop)
+    }
+    ctx.strokeStyle = selected === reactor ? '#f1c40f' : '#546e7a'
+    ctx.lineWidth = 2
+    ctx.strokeRect(x + 2, y + 2, w - 4, h - 4)
+    if (reactor.melted) {
+      ctx.fillStyle = '#ff5252'
+    } else if (reactor.reactivity > 0) {
+      ctx.fillStyle = '#69f0ae'
+    } else {
+      ctx.fillStyle = '#90a4ae'
+    }
+    ctx.font = '10px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(reactor.melted ? '熔毁' : reactor.running ? '运行中' : '停机', x + w / 2, y + h / 2 - 8)
+    ctx.fillText(`${reactor.coreTempK.toFixed(0)}K`, x + w / 2, y + h / 2 + 6)
+    ctx.fillText(`控制棒 ${(reactor.controlRatio * 100).toFixed(0)}%`, x + w / 2, y + h / 2 + 20)
     ctx.textAlign = 'start'
   }
 

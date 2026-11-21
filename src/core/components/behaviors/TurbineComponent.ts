@@ -74,8 +74,11 @@ export class TurbineComponent extends BaseComponent implements FluidReceptor {
       const released = pulled - consumed
       const efficiency = Math.min(0.95, 0.85 + ctx.host.converterEfficiencyBoost)
       const energy = consumed * this.emfMax * efficiency
-      ctx.ledger.add(EnergyType.KINETIC, energy)
-      ctx.host.emitEnergy(EnergyType.KINETIC, energy, this.x + 0.5, this.y + 0.5)
+      const cx = this.x + this.width / 2
+      const cy = this.y + this.height / 2
+      const income = energy * ctx.host.incomeFactorAt(cx, cy)
+      ctx.ledger.add(EnergyType.KINETIC, income)
+      ctx.host.emitEnergy(EnergyType.KINETIC, income * ctx.host.workFactorAt(cx, cy), cx, cy)
       const target = Math.min(1, pulled / (this.steamRate * ctx.dt))
       this.steamPower += (target - this.steamPower) * Math.min(1, ctx.dt * 3)
       const px = (this.x + this.width / 2) * CELL_SIZE

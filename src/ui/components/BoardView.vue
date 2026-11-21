@@ -37,6 +37,7 @@ onMounted(() => {
     onPipePlace: (cells: Array<{ x: number; y: number }>): void => game.placePipes(cells),
     getPipeNetworks: (): PipeNetwork[] => game.sim.pipeSystem.getNetworks(),
     getPipeNetwork: (pipe: PipeComponent): PipeNetwork | null => game.sim.pipeSystem.networkOf(pipe),
+    getContamination: (): { x: number; y: number; radius: number } | null => game.sim.contaminationZone,
     drainFluidEmissions: (): FluidEmission[] => game.sim.drainFluidEmissions(),
     onFreeTerminalMove: (component: BaseComponent, px: number, py: number): void => game.moveFreeTerminal(component, px, py),
     getLockedComponents: (): BaseComponent[] => [...game.sim.rotation.lockedComponents],

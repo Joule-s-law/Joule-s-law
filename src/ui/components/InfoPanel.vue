@@ -151,6 +151,26 @@
         <div class="row"><span>当前电动势</span><span>{{ (info.voltage >= 0 ? '' : '-') + Math.abs(info.voltage).toFixed(2) }} V</span></div>
       </div>
 
+      <div v-if="info.isFissionReactor && reactor !== null" class="extra">
+        <div class="row"><span>堆芯温度</span><span :class="{ hot: info.fissionTempK >= 900 }">{{ info.fissionTempK.toFixed(1) }} K</span></div>
+        <div class="row"><span>控制棒</span><span>{{ (info.fissionRod * 100).toFixed(0) }}% 刹车</span></div>
+        <div class="rod-slider">
+          <span>刹车比例</span>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            :value="Math.round(info.fissionRod * 100)"
+            @input="game.setReactorRodRatio(reactor, Number(($event.target as HTMLInputElement).value) / 100)"
+          >
+        </div>
+        <div class="reactor-buttons">
+          <button class="action start" :disabled="info.fissionRunning" @click="game.startFission(reactor)">启动反应</button>
+          <button class="action scram" @click="game.emergencyScram(reactor)">紧急刹车</button>
+        </div>
+        <div class="row warn"><span>警告</span><span>供水不足会升温，1200K 熔毁</span></div>
+      </div>
+
       <button class="action monitor" :class="{ on: info.monitored }" @click="game.toggleMonitor()">
         实时监视：{{ info.monitored ? '开' : '关' }}（按住 Tab 点击元件可快捷切换）
       </button>
@@ -167,10 +187,15 @@ import { WIRE_MATERIALS } from '../../core/components/registry/wireMaterials'
 import { getFluid } from '../../core/fluids/fluids'
 import type { PhotonPropagation } from '../../core/components/behaviors/PhotonScreenComponent'
 import { useSettingsStore, formatWithPrefix, formatAngularValue } from '../settings/useSettingsStore'
+import { FissionReactorComponent } from '../../core/components/behaviors/FissionReactorComponent'
 
 const game = useGameStore()
 const s = useSettingsStore()
 const info = computed(() => game.selectedInfo)
+const reactor = computed(() => {
+  const component = game.selectedComponent
+  return component instanceof FissionReactorComponent ? component : null
+})
 
 const PHOTON_DIRECTIONS: Array<{ value: PhotonPropagation; label: string }> = [
   { value: 'up', label: '上' },
@@ -376,6 +401,38 @@ function fluidName(id: string): string {
   margin-top: 10px;
   border-color: #e74c3c;
   color: #e74c3c;
+}
+.rod-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #b0bec5;
+}
+.rod-slider input {
+  flex: 1;
+  accent-color: #ffb300;
+}
+.reactor-buttons {
+  display: flex;
+  gap: 8px;
+}
+.reactor-buttons .start {
+  flex: 1;
+  border-color: #69f0ae;
+  color: #69f0ae;
+}
+.reactor-buttons .scram {
+  flex: 1;
+  border-color: #ff5252;
+  color: #ff5252;
+}
+.row .hot {
+  color: #ff8a65;
+  font-weight: 700;
+}
+.row .warn {
+  color: #ffb300;
 }
 .action.monitor.on {
   border-color: #4fc3f7;

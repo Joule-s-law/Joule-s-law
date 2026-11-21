@@ -16,6 +16,7 @@ import { ClutchComponent } from '../../core/components/behaviors/ClutchComponent
 import { FreeTerminalComponent } from '../../core/components/behaviors/FreeTerminalComponent'
 import { TankComponent } from '../../core/components/behaviors/TankComponent'
 import { TurbineComponent } from '../../core/components/behaviors/TurbineComponent'
+import { FissionReactorComponent } from '../../core/components/behaviors/FissionReactorComponent'
 import { ElectronGunComponent } from '../../core/components/behaviors/ElectronGunComponent'
 import { PhotonScreenComponent } from '../../core/components/behaviors/PhotonScreenComponent'
 import type { PhotonPropagation } from '../../core/components/behaviors/PhotonScreenComponent'
@@ -70,6 +71,10 @@ export interface ComponentInfo {
   tankCapacity: number
   isTurbine: boolean
   turbineSteamPower: number
+  isFissionReactor: boolean
+  fissionTempK: number
+  fissionRod: number
+  fissionRunning: boolean
   isElectronGun: boolean
   aimAngle: number
   launchSpeed: number
@@ -99,7 +104,8 @@ export interface TechNodeInfo {
   cost: number
   unlocked: boolean
   canBuy: boolean
-  parentName: string | null
+  parentIds: string[]
+  parentNames: string[]
   x: number
   y: number
 }
@@ -243,6 +249,10 @@ export const useGameStore = defineStore('game', () => {
       tankCapacity: component instanceof TankComponent ? component.capacity : 0,
       isTurbine: component instanceof TurbineComponent,
       turbineSteamPower: component instanceof TurbineComponent ? component.steamPower : 0,
+      isFissionReactor: component instanceof FissionReactorComponent,
+      fissionTempK: component instanceof FissionReactorComponent ? component.coreTempK : 300,
+      fissionRod: component instanceof FissionReactorComponent ? component.controlRatio : 1,
+      fissionRunning: component instanceof FissionReactorComponent ? component.running : false,
       isElectronGun: component instanceof ElectronGunComponent,
       aimAngle: component instanceof ElectronGunComponent ? component.aimAngle : 0,
       launchSpeed: component instanceof ElectronGunComponent ? component.launchSpeed : 0,
@@ -293,7 +303,7 @@ export const useGameStore = defineStore('game', () => {
     for (const node of TECH_NODES) {
       if (!techTree.isRevealed(node.id)) continue
       const layout = techLayout.positions[node.id] ?? defaultNodePosition(node)
-      const parent = node.parentId !== null ? TECH_NODES.find((n) => n.id === node.parentId) : undefined
+      const parents = node.parentIds.map((id) => TECH_NODES.find((n) => n.id === id)).filter((n) => n !== undefined)
       infos.push({
         id: node.id,
         displayName: node.displayName,
@@ -304,7 +314,8 @@ export const useGameStore = defineStore('game', () => {
         cost: techTree.getCost(node.id),
         unlocked: techTree.isUnlocked(node.id),
         canBuy: techTree.canBuy(node.id) && (settings.freePurchases || techTree.getCost(node.id) <= sim.economy.money),
-        parentName: parent?.displayName ?? null,
+        parentIds: node.parentIds,
+        parentNames: parents.map((p) => p.displayName),
         x: layout.x,
         y: layout.y,
       })
@@ -312,20 +323,27 @@ export const useGameStore = defineStore('game', () => {
     return infos
   }
 
+  const depthCache = new Map<string, number>()
+
   function nodeDepth(node: TechNode): number {
+    const cached = depthCache.get(node.id)
+    if (cached !== undefined) return cached
     let depth = 0
-    let cursor: string | null = node.parentId
-    while (cursor !== null) {
-      depth++
-      cursor = TECH_NODES.find((n) => n.id === cursor)?.parentId ?? null
+    for (const parentId of node.parentIds) {
+      const parent = TECH_NODES.find((n) => n.id === parentId)
+      if (parent !== undefined) depth = Math.max(depth, nodeDepth(parent) + 1)
     }
+    depthCache.set(node.id, depth)
     return depth
   }
 
   function defaultNodePosition(node: TechNode): { x: number; y: number } {
     const depth = nodeDepth(node)
-    const sameDepth = TECH_NODES.filter((n) => nodeDepth(n) === depth)
-    return { x: 80 + depth * 260, y: 80 + sameDepth.indexOf(node) * 130 }
+    const byId = [...TECH_NODES].sort((a, b) => a.id.localeCompare(b.id))
+    const sameDepth = byId.filter((n) => nodeDepth(n) === depth)
+    const row = sameDepth.indexOf(node)
+    const stagger = depth % 2 === 1 ? 40 : 0
+    return { x: 80 + depth * 260, y: 80 + row * 130 + stagger }
   }
 
   const techLayout = loadTechLayout()
@@ -820,6 +838,18 @@ export const useGameStore = defineStore('game', () => {
     wirePendingPort.value = null
   }
 
+  function startFission(component: FissionReactorComponent): void {
+    if (!component.melted) component.running = true
+  }
+
+  function emergencyScram(component: FissionReactorComponent): void {
+    component.controlRatio = 1
+  }
+
+  function setReactorRodRatio(component: FissionReactorComponent, ratio: number): void {
+    component.controlRatio = Math.max(0, Math.min(1, ratio))
+  }
+
   function sellComponent(component: BaseComponent): void {
     const wires = new Set<WireComponent>()
     for (const port of component.ports) {
@@ -991,6 +1021,9 @@ export const useGameStore = defineStore('game', () => {
     onPortClick,
     cancelWirePending,
     sellComponent,
+    startFission,
+    emergencyScram,
+    setReactorRodRatio,
     sellSelected,
     setWireMaterial,
     setWireColor,
